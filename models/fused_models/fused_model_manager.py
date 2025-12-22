@@ -4,7 +4,6 @@ Main class for managing and directing text+image pairs to the appropriate fused 
 Acts as a facade for all fused embedding operations in the e-commerce retrieval system.
 """
 
-import numpy as np
 from typing import List, Dict, Union, Optional, Any, Tuple
 from enum import Enum
 from pathlib import Path
