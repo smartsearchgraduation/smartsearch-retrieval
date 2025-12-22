@@ -5,7 +5,7 @@ Generates image embeddings using OpenAI's CLIP model for e-commerce product retr
 
 import torch
 import numpy as np
-from typing import List, Union, Optional
+from typing import List
 from pathlib import Path
 from PIL import Image
 

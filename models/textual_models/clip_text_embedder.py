@@ -5,7 +5,7 @@ Generates text embeddings using OpenAI's CLIP model for e-commerce product retri
 
 import torch
 import numpy as np
-from typing import List, Union
+from typing import List
 from langchain.embeddings.base import Embeddings
 
 
