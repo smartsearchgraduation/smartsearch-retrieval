@@ -4,14 +4,14 @@ Flask API for managing products and performing similarity search.
 """
 
 from flask import Flask, request, jsonify
-from typing import Dict, Any, List, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor
 
 # Import managers
 from models.textual_models import TextModelManager
 from models.visual_models import VisualModelManager
 from models.fused_models import FusedModelManager
-from vector_db import FAISSManager, IndexType
+from vector_db import FAISSManager
 
 
 app = Flask(__name__)
