@@ -23,17 +23,50 @@ _fused_managers: Dict[str, FusedModelManager] = {}
 _faiss_manager: Optional[FAISSManager] = None
 
 
-def get_faiss_manager() -> FAISSManager:
-    """Get or initialize the FAISS manager."""
+mapping = {
+    "ViT-B/32": {"type": "clip", "dimension": 512},
+    "BAAI/bge-large-en-v1.5": {"type": "bge", "dimension": 1024},
+    "Qwen/Qwen3-Embedding-8B": {"type": "qwen", "dimension": 4096},
+}
+
+
+def get_faiss_manager(
+    textual_model_name: str = None,
+    visual_model_name: str = None,
+    fused_model_name: str = None,
+) -> FAISSManager:
+    """
+    Get or initialize the FAISS manager.
+
+    Dimensions are determined from the mapping based on the provided model names.
+    The first call with model names sets the dimensions for each index type.
+    """
     global _faiss_manager
     if _faiss_manager is None:
+        # Get dimensions from mapping based on provided model names
+        textual_dim = (
+            mapping.get(textual_model_name, {}).get("dimension", 512)
+            if textual_model_name
+            else 512
+        )
+        visual_dim = (
+            mapping.get(visual_model_name, {}).get("dimension", 512)
+            if visual_model_name
+            else 512
+        )
+        fused_dim = (
+            mapping.get(fused_model_name, {}).get("dimension", 512)
+            if fused_model_name
+            else 512
+        )
+
         _faiss_manager = FAISSManager(
             dimension=512,
             index_path="./data/faiss_indices",
             dimensions={
-                "textual": 1024,  # BGE-base produces 1024-dim embeddings
-                "visual": 512,  # CLIP ViT-B/32 produces 512-dim embeddings
-                "fused": 512,  # CLIP-based fused embeddings
+                "textual": textual_dim,
+                "visual": visual_dim,
+                "fused": fused_dim,
             },
         )
     return _faiss_manager
@@ -42,9 +75,13 @@ def get_faiss_manager() -> FAISSManager:
 def get_textual_manager(model_name: str) -> TextModelManager:
     """Get or initialize a textual model manager."""
     if model_name not in _textual_managers:
-        # Detect model type based on model name
-        if "bge" in model_name.lower() or model_name.startswith("BAAI/"):
+        # Get model type from mapping, fallback to detection logic
+        if model_name in mapping:
+            model_type = mapping[model_name]["type"]
+        elif "bge" in model_name.lower() or model_name.startswith("BAAI/"):
             model_type = "bge"
+        elif "qwen" in model_name.lower() or model_name.startswith("Qwen/"):
+            model_type = "qwen"
         else:
             model_type = "clip"
 
@@ -152,7 +189,10 @@ def add_product():
         # fused_model_name = data.get("fused_model_name")  # Not used for now
 
         # Get managers
-        faiss_manager = get_faiss_manager()
+        faiss_manager = get_faiss_manager(
+            textual_model_name=textual_model_name,
+            visual_model_name=visual_model_name,
+        )
         textual_manager = get_textual_manager(textual_model_name)
         visual_manager = get_visual_manager(visual_model_name)
 
@@ -365,7 +405,10 @@ def late_fusion_search():
         image_weight = 1 - text_weight
 
         # Get managers
-        faiss_manager = get_faiss_manager()
+        faiss_manager = get_faiss_manager(
+            textual_model_name=textual_model_name,
+            visual_model_name=visual_model_name,
+        )
         textual_manager = get_textual_manager(textual_model_name)
         visual_manager = get_visual_manager(visual_model_name)
 
@@ -552,7 +595,9 @@ def text_search():
         top_k = data.get("top_k", 10)
 
         # Get managers
-        faiss_manager = get_faiss_manager()
+        faiss_manager = get_faiss_manager(
+            textual_model_name=textual_model_name,
+        )
         textual_manager = get_textual_manager(textual_model_name)
 
         # Generate text embedding
@@ -616,5 +661,92 @@ def text_search():
         )
 
 
+@app.route("/api/retrieval/delete-product/<product_id>", methods=["DELETE"])
+def delete_product(product_id: str):
+    """
+    Delete a product and all its embeddings from all FAISS indices.
+
+    Path Parameters:
+        product_id: The ID of the product to delete.
+
+    Response:
+    {
+        "status": "success" | "error",
+        "message": "...",
+        "details": {
+            "product_id": "prod_001",
+            "removed_counts": {
+                "textual": 1,
+                "visual": 3,
+                "fused": 3
+            },
+            "total_removed": 7
+        }
+    }
+    """
+    try:
+        if not product_id:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Product ID is required",
+                    }
+                ),
+                400,
+            )
+
+        # Get FAISS manager
+        faiss_manager = get_faiss_manager()
+
+        # Remove product from all indices
+        removed_counts = faiss_manager.remove_product_from_all(product_id)
+        total_removed = sum(removed_counts.values())
+
+        if total_removed == 0:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": f"Product {product_id} not found in any index",
+                    }
+                ),
+                404,
+            )
+
+        # Save indices after deletion
+        faiss_manager.save()
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "message": f"Product {product_id} deleted successfully",
+                    "details": {
+                        "product_id": product_id,
+                        "removed_counts": removed_counts,
+                        "total_removed": total_removed,
+                    },
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        error_message = str(e) if str(e) else f"{type(e).__name__}: {repr(e)}"
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": error_message,
+                }
+            ),
+            500,
+        )
+
+
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5002)

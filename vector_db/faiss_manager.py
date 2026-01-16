@@ -396,29 +396,45 @@ class FAISSManager:
             Number of vectors removed.
         """
         with self._lock:
-            # Find vectors to keep
-            vectors_to_keep = []
+            # Find vector IDs to remove and metadata to keep
+            ids_to_remove = []
             metadata_to_keep = []
-            removed_count = 0
 
             for meta in self.metadata[index_type]:
-                if meta.get("product_id") != product_id:
-                    metadata_to_keep.append(meta)
+                if meta.get("product_id") == product_id:
+                    ids_to_remove.append(meta.get("_vector_id"))
                 else:
-                    removed_count += 1
+                    metadata_to_keep.append(meta)
 
-            if removed_count == 0:
+            if len(ids_to_remove) == 0:
                 return 0
 
-            # Rebuild index
-            self._create_index(index_type)
-            self.metadata[index_type] = []
+            removed_count = len(ids_to_remove)
 
-            # Note: This is a simplified implementation
-            # In production, you'd need to store vectors to rebuild properly
-            # For now, we just clear the metadata
+            # Use FAISS remove_ids to delete vectors from the index
+            ids_array = np.array(ids_to_remove, dtype=np.int64)
+            self.indices[index_type].remove_ids(ids_array)
+
+            # Update metadata
+            self.metadata[index_type] = metadata_to_keep
 
             return removed_count
+
+    def remove_product_from_all(self, product_id: str) -> Dict[str, int]:
+        """
+        Remove all vectors for a product from all indices (textual, visual, fused).
+
+        Args:
+            product_id: Product ID to remove.
+
+        Returns:
+            Dictionary with count of removed vectors per index type.
+        """
+        removed_counts = {}
+        for index_type in IndexType:
+            count = self.remove_by_product_id(index_type, product_id)
+            removed_counts[index_type.value] = count
+        return removed_counts
 
     def save(self, path: Optional[str] = None):
         """

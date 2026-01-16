@@ -1,6 +1,6 @@
 """
 BGE Base Embedder
-Generates text embeddings using BAAI/bge-base-en-v1.5 model for e-commerce product retrieval.
+Generates text embeddings using BAAI/ bge-large-en-v1.5 model for e-commerce product retrieval.
 """
 
 import torch
@@ -11,19 +11,19 @@ from langchain.embeddings.base import Embeddings
 
 class BGEBaseEmbedder(Embeddings):
     """
-    A LangChain-compatible text embedder using BAAI/bge-base-en-v1.5 model.
+    A LangChain-compatible text embedder using BAAI/ bge-large-en-v1.5 model.
     Generates text embeddings for e-commerce product descriptions and queries.
 
     BGE (BAAI General Embedding) models are optimized for retrieval tasks
     and produce 1024-dimensional embeddings.
     """
 
-    def __init__(self, model_name: str = "BAAI/bge-base-en-v1.5", device: str = None):
+    def __init__(self, model_name: str = "BAAI/ bge-large-en-v1.5", device: str = None):
         """
         Initialize the BGE Base Embedder.
 
         Args:
-            model_name: HuggingFace model name. Default is "BAAI/bge-base-en-v1.5".
+            model_name: HuggingFace model name. Default is "BAAI/ bge-large-en-v1.5".
             device: Device to run the model on ('cuda' or 'cpu').
                     Auto-detected if None.
         """
@@ -33,7 +33,7 @@ class BGEBaseEmbedder(Embeddings):
         )
         self.tokenizer = None
         self.model = None
-        self._embedding_dimension = 1024  # BGE-base models produce 1024-dim embeddings
+        self._embedding_dimension = 1024  #  bge-large models produce 1024-dim embeddings
         self._load_model()
 
     def _load_model(self):
@@ -167,7 +167,7 @@ class BGEBaseEmbedder(Embeddings):
         Get the dimension of the embedding vectors.
 
         Returns:
-            Integer dimension of embeddings (1024 for bge-base models).
+            Integer dimension of embeddings (1024 for  bge-large models).
         """
         return self._embedding_dimension
 
