@@ -33,18 +33,30 @@ class FAISSManager:
         dimension: int = 512,
         index_path: Optional[str] = None,
         use_gpu: bool = False,
+        dimensions: Optional[Dict[str, int]] = None,
     ):
         """
         Initialize the FAISS Manager.
 
         Args:
-            dimension: Dimension of embedding vectors (default: 512 for CLIP ViT-B/32).
+            dimension: Default dimension of embedding vectors (default: 512 for CLIP ViT-B/32).
             index_path: Path to directory for saving/loading indices.
             use_gpu: Whether to use GPU for FAISS operations (requires faiss-gpu).
+            dimensions: Optional dict to specify dimension per index type.
+                        Keys: 'textual', 'visual', 'fused'. Values: int dimensions.
+                        Example: {'textual': 768, 'visual': 512, 'fused': 512}
         """
         self.dimension = dimension
         self.index_path = index_path
         self.use_gpu = use_gpu
+
+        # Per-index dimensions (use default if not specified)
+        self.dimensions: Dict[IndexType, int] = {}
+        for index_type in IndexType:
+            if dimensions and index_type.value in dimensions:
+                self.dimensions[index_type] = dimensions[index_type.value]
+            else:
+                self.dimensions[index_type] = dimension
 
         # Initialize indices
         self.indices: Dict[IndexType, faiss.Index] = {}
@@ -76,8 +88,11 @@ class FAISSManager:
         Args:
             index_type: Type of index to create.
         """
+        # Get dimension for this specific index type
+        dim = self.dimensions[index_type]
+
         # Use IndexFlatIP for inner product (cosine similarity with normalized vectors)
-        index = faiss.IndexFlatIP(self.dimension)
+        index = faiss.IndexFlatIP(dim)
 
         # Wrap with IDMap to support custom IDs
         index = faiss.IndexIDMap(index)
@@ -94,7 +109,7 @@ class FAISSManager:
         self.id_counters[index_type] = 0
 
         print(
-            f"[FAISSManager] Initialized {index_type.value} index with dimension {self.dimension}"
+            f"[FAISSManager] Initialized {index_type.value} index with dimension {dim}"
         )
 
     def _get_next_id(self, index_type: IndexType) -> int:

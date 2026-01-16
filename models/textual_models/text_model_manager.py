@@ -13,6 +13,7 @@ class TextModelType(Enum):
     """Enum for available text model types."""
 
     CLIP = "clip"
+    BGE = "bge"
     # Future models can be added here
     # SENTENCE_TRANSFORMER = "sentence_transformer"
     # OPENAI = "openai"
@@ -63,6 +64,8 @@ class TextModelManager:
         """Initialize the appropriate text model based on model_type."""
         if self.model_type == TextModelType.CLIP:
             self._initialize_clip_model()
+        elif self.model_type == TextModelType.BGE:
+            self._initialize_bge_model()
         else:
             raise NotImplementedError(
                 f"Model type {self.model_type} is not implemented yet."
@@ -77,6 +80,16 @@ class TextModelManager:
 
         self.model = CLIPTextEmbedder(model_name=model_name, device=device)
         print(f"[TextModelManager] Initialized CLIP model: {model_name}")
+
+    def _initialize_bge_model(self):
+        """Initialize BGE text embedder."""
+        from .bge_base_embedder import BGEBaseEmbedder
+
+        model_name = self.model_config.get("model_name", "BAAI/bge-base-en-v1.5")
+        device = self.model_config.get("device", None)
+
+        self.model = BGEBaseEmbedder(model_name=model_name, device=device)
+        print(f"[TextModelManager] Initialized BGE model: {model_name}")
 
     def get_embedding(self, text: str) -> List[float]:
         """

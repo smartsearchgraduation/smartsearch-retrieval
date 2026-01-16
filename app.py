@@ -30,6 +30,11 @@ def get_faiss_manager() -> FAISSManager:
         _faiss_manager = FAISSManager(
             dimension=512,
             index_path="./data/faiss_indices",
+            dimensions={
+                "textual": 1024,  # BGE-base produces 1024-dim embeddings
+                "visual": 512,  # CLIP ViT-B/32 produces 512-dim embeddings
+                "fused": 512,  # CLIP-based fused embeddings
+            },
         )
     return _faiss_manager
 
@@ -37,8 +42,14 @@ def get_faiss_manager() -> FAISSManager:
 def get_textual_manager(model_name: str) -> TextModelManager:
     """Get or initialize a textual model manager."""
     if model_name not in _textual_managers:
+        # Detect model type based on model name
+        if "bge" in model_name.lower() or model_name.startswith("BAAI/"):
+            model_type = "bge"
+        else:
+            model_type = "clip"
+
         _textual_managers[model_name] = TextModelManager(
-            model_type="clip",
+            model_type=model_type,
             model_config={"model_name": model_name},
         )
     return _textual_managers[model_name]
@@ -207,11 +218,15 @@ def add_product():
         )
 
     except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        error_message = str(e) if str(e) else f"{type(e).__name__}: {repr(e)}"
         return (
             jsonify(
                 {
                     "status": "error",
-                    "message": str(e),
+                    "message": error_message,
                 }
             ),
             500,
