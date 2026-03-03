@@ -37,22 +37,13 @@ class CLIPTextEmbedder(Embeddings):
         self._load_model()
 
     def _load_model(self):
-        """Load the CLIP model and preprocessing function."""
-        try:
-            import clip
+        """Load the CLIP model from shared pool."""
+        from models.clip_model_pool import CLIPModelPool
 
-            self.model, self.preprocess = clip.load(self.model_name, device=self.device)
-            self.model.eval()
-            print(
-                f"[CLIPTextEmbedder] Loaded CLIP model: {self.model_name} on {self.device}"
-            )
-        except ImportError:
-            raise ImportError(
-                "CLIP is not installed. Please install it via: "
-                "pip install git+https://github.com/openai/CLIP.git"
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to load CLIP model: {e}")
+        self.model, self.preprocess = CLIPModelPool.get(self.model_name, self.device)
+        print(
+            f"[CLIPTextEmbedder] Using CLIP model: {self.model_name} on {self.device}"
+        )
 
     def _get_text_embedding(self, text: str) -> np.ndarray:
         """
