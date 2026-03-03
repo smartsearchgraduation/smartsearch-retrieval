@@ -336,18 +336,14 @@ GET /api/retrieval/index-stats
 
 ## 🔧 Model Options
 
-The system supports various CLIP model variants:
+The system supports the following models (configured in `config.json`):
 
-| Model | Description |
-|-------|-------------|
-| `ViT-B/32` | Default, balanced speed/accuracy |
-| `ViT-B/16` | Higher accuracy |
-| `ViT-L/14` | Highest accuracy, slower |
-| `RN50` | ResNet-50 backbone |
-| `RN101` | ResNet-101 backbone |
-| `RN50x4` | ResNet-50 with 4x width |
-| `RN50x16` | ResNet-50 with 16x width |
-| `RN50x64` | ResNet-50 with 64x width |
+| Model | Type | Dimension | Description |
+|-------|------|-----------|-------------|
+| `ViT-B/32` | CLIP | 512 | Default, balanced speed/accuracy (text + image) |
+| `ViT-B/16` | CLIP | 512 | Higher accuracy (text + image) |
+| `BAAI/bge-large-en-v1.5` | BGE | 1024 | High-quality text embeddings |
+| `Qwen/Qwen3-Embedding-8B` | Qwen | 4096 | Large-scale text embeddings |
 
 ## 📚 Usage Examples
 
