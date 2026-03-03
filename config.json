@@ -1,0 +1,24 @@
+{
+    "models": {
+        "ViT-B/32": {
+            "type": "clip",
+            "dimension": 512
+        },
+        "BAAI/bge-large-en-v1.5": {
+            "type": "bge",
+            "dimension": 1024
+        },
+        "Qwen/Qwen3-Embedding-8B": {
+            "type": "qwen",
+            "dimension": 4096
+        }
+    },
+    "defaults": {
+        "dimension": 512,
+        "top_k": 10,
+        "max_top_k": 100,
+        "index_path": "./data/faiss_indices",
+        "host": "0.0.0.0",
+        "port": 5002
+    }
+}

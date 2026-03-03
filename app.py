@@ -22,16 +22,33 @@ _visual_managers: Dict[str, VisualModelManager] = {}
 _fused_managers: Dict[str, FusedModelManager] = {}
 _faiss_manager: Optional[FAISSManager] = None
 
+import json
+import os
 
-mapping = {
-    "ViT-B/32": {"type": "clip", "dimension": 512},
-    "BAAI/bge-large-en-v1.5": {"type": "bge", "dimension": 1024},
-    "Qwen/Qwen3-Embedding-8B": {"type": "qwen", "dimension": 4096},
-}
 
-# Maximum allowed top_k to prevent excessive memory usage
-MAX_TOP_K = 100
-DEFAULT_TOP_K = 10
+def _load_config() -> dict:
+    """Load configuration from config.json."""
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    try:
+        with open(config_path, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise RuntimeError(f"Configuration file not found: {config_path}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid JSON in configuration file: {e}")
+
+
+# Load configuration
+_config = _load_config()
+MODEL_REGISTRY = _config["models"]
+
+# Defaults from config
+MAX_TOP_K = _config["defaults"].get("max_top_k", 100)
+DEFAULT_TOP_K = _config["defaults"].get("top_k", 10)
+INDEX_PATH = _config["defaults"].get("index_path", "./data/faiss_indices")
+HOST = _config["defaults"].get("host", "0.0.0.0")
+PORT = _config["defaults"].get("port", 5002)
+DEFAULT_DIMENSION = _config["defaults"].get("dimension", 512)
 
 
 def validate_top_k(data: dict) -> int:
@@ -60,31 +77,31 @@ def get_faiss_manager(
     """
     Get or initialize the FAISS manager.
 
-    Dimensions are determined from the mapping based on the provided model names.
+    Dimensions are determined from the MODEL_REGISTRY based on the provided model names.
     The first call with model names sets the dimensions for each index type.
     """
     global _faiss_manager
     if _faiss_manager is None:
-        # Get dimensions from mapping based on provided model names
+        # Get dimensions from MODEL_REGISTRY based on provided model names
         textual_dim = (
-            mapping.get(textual_model_name, {}).get("dimension", 512)
+            MODEL_REGISTRY.get(textual_model_name, {}).get("dimension", DEFAULT_DIMENSION)
             if textual_model_name
-            else 512
+            else DEFAULT_DIMENSION
         )
         visual_dim = (
-            mapping.get(visual_model_name, {}).get("dimension", 512)
+            MODEL_REGISTRY.get(visual_model_name, {}).get("dimension", DEFAULT_DIMENSION)
             if visual_model_name
-            else 512
+            else DEFAULT_DIMENSION
         )
         fused_dim = (
-            mapping.get(fused_model_name, {}).get("dimension", 512)
+            MODEL_REGISTRY.get(fused_model_name, {}).get("dimension", DEFAULT_DIMENSION)
             if fused_model_name
-            else 512
+            else DEFAULT_DIMENSION
         )
 
         _faiss_manager = FAISSManager(
-            dimension=512,
-            index_path="./data/faiss_indices",
+            dimension=DEFAULT_DIMENSION,
+            index_path=INDEX_PATH,
             dimensions={
                 "textual": textual_dim,
                 "visual": visual_dim,
@@ -97,9 +114,9 @@ def get_faiss_manager(
 def get_textual_manager(model_name: str) -> TextModelManager:
     """Get or initialize a textual model manager."""
     if model_name not in _textual_managers:
-        # Get model type from mapping, fallback to detection logic
-        if model_name in mapping:
-            model_type = mapping[model_name]["type"]
+        # Get model type from MODEL_REGISTRY, fallback to detection logic
+        if model_name in MODEL_REGISTRY:
+            model_type = MODEL_REGISTRY[model_name]["type"]
         elif "bge" in model_name.lower() or model_name.startswith("BAAI/"):
             model_type = "bge"
         elif "qwen" in model_name.lower() or model_name.startswith("Qwen/"):
@@ -781,4 +798,4 @@ def delete_product(product_id: str):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5002)
+    app.run(debug=True, host=HOST, port=PORT)
