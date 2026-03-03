@@ -1,5 +1,5 @@
 """
-Search Routes — text search, late fusion search endpoints.
+Search Routes — text search, image search, late fusion search endpoints.
 """
 
 from typing import Dict, Any
@@ -318,6 +318,140 @@ def text_search():
             200,
         )
 
+    except ValueError as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            400,
+        )
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@search_bp.route("/api/retrieval/search/image", methods=["POST"])
+def image_search():
+    """
+    Image-only search in the Visual index.
+
+    Request JSON:
+    {
+        "image": "C:/path/to/query/image.jpg",
+        "visual_model_name": "ViT-B/32",
+        "top_k": 10  // optional, default 10
+    }
+
+    Response:
+    {
+        "status": "success",
+        "results": [
+            {
+                "product_id": "prod_001",
+                "score": 0.85,
+                "best_image_no": 0
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        error = validate_required_fields(data, ["image", "visual_model_name"])
+        if error:
+            return error
+
+        image_path = data["image"]
+        visual_model_name = data["visual_model_name"]
+        top_k = validate_top_k(data)
+
+        # Get managers
+        faiss_manager = get_faiss_manager(
+            visual_model_name=visual_model_name,
+        )
+        visual_manager = get_visual_manager(visual_model_name)
+
+        # Generate image embedding
+        image_embedding = visual_manager.get_embedding(image_path)
+
+        # Search visual index
+        search_results = faiss_manager.search_visual(
+            query_embedding=image_embedding,
+            top_k=top_k * 2,  # Get more for deduplication
+            model_name=visual_model_name,
+        )
+
+        # Deduplicate: keep best score and image_no per product
+        product_scores: Dict[str, Dict[str, Any]] = {}
+        for result in search_results:
+            product_id = result["product_id"]
+            score = result["score"]
+            image_no = result.get("image_no", 0)
+
+            if product_id not in product_scores:
+                product_scores[product_id] = {
+                    "score": score,
+                    "image_no": image_no,
+                }
+            else:
+                if score > product_scores[product_id]["score"]:
+                    product_scores[product_id] = {
+                        "score": score,
+                        "image_no": image_no,
+                    }
+
+        # Build results list
+        results = [
+            {
+                "product_id": product_id,
+                "score": round(scores["score"], 6),
+                "best_image_no": scores["image_no"],
+            }
+            for product_id, scores in product_scores.items()
+        ]
+
+        # Sort by score (descending)
+        results.sort(key=lambda x: x["score"], reverse=True)
+
+        # Return top_k results
+        results = results[:top_k]
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "results": results,
+                    "meta": {
+                        "total_results": len(results),
+                        "model_name": visual_model_name,
+                    },
+                }
+            ),
+            200,
+        )
+
+    except FileNotFoundError as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": f"Image not found: {str(e)}",
+                }
+            ),
+            400,
+        )
     except ValueError as e:
         return (
             jsonify(
