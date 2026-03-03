@@ -29,6 +29,28 @@ mapping = {
     "Qwen/Qwen3-Embedding-8B": {"type": "qwen", "dimension": 4096},
 }
 
+# Maximum allowed top_k to prevent excessive memory usage
+MAX_TOP_K = 100
+DEFAULT_TOP_K = 10
+
+
+def validate_top_k(data: dict) -> int:
+    """
+    Validate and return top_k from request data.
+    Returns clamped value between 1 and MAX_TOP_K, defaults to DEFAULT_TOP_K.
+
+    Raises:
+        ValueError: If top_k is not a valid positive integer.
+    """
+    raw = data.get("top_k", DEFAULT_TOP_K)
+    try:
+        top_k = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"top_k must be a valid integer, got: {raw}")
+    if top_k < 1:
+        raise ValueError(f"top_k must be >= 1, got: {top_k}")
+    return min(top_k, MAX_TOP_K)
+
 
 def get_faiss_manager(
     textual_model_name: str = None,
@@ -388,7 +410,7 @@ def late_fusion_search():
         text_weight = float(data["text_weight"])
         image_path = data["image"]
         visual_model_name = data["visual_model_name"]
-        top_k = data.get("top_k", 10)
+        top_k = validate_top_k(data)
 
         # Validate text_weight
         if not 0 <= text_weight <= 1:
@@ -592,7 +614,7 @@ def text_search():
 
         text = data["text"]
         textual_model_name = data["textual_model_name"]
-        top_k = data.get("top_k", 10)
+        top_k = validate_top_k(data)
 
         # Get managers
         faiss_manager = get_faiss_manager(
@@ -649,6 +671,16 @@ def text_search():
             200,
         )
 
+    except ValueError as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            400,
+        )
     except Exception as e:
         return (
             jsonify(
