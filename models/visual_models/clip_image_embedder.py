@@ -174,43 +174,6 @@ class CLIPImageEmbedder:
         embedding = self._get_embedding_from_pil(image)
         return embedding.tolist()
 
-    def embed_batch(self, image_paths: List[str], batch_size: int = 32) -> np.ndarray:
-        """
-        Generate embeddings for images in batches for better efficiency.
-
-        Args:
-            image_paths: List of absolute paths to image files.
-            batch_size: Number of images to process at once.
-
-        Returns:
-            Numpy array of shape (num_images, embedding_dim).
-        """
-        all_embeddings = []
-
-        for i in range(0, len(image_paths), batch_size):
-            batch_paths = image_paths[i : i + batch_size]
-
-            # Load and preprocess batch of images
-            batch_tensors = []
-            for image_path in batch_paths:
-                image = self._load_image(image_path)
-                image_tensor = self.preprocess(image)
-                batch_tensors.append(image_tensor)
-
-            # Stack tensors into a batch
-            batch_tensor = torch.stack(batch_tensors).to(self.device)
-
-            with torch.no_grad():
-                image_features = self.model.encode_image(batch_tensor)
-                image_features = image_features / image_features.norm(
-                    dim=-1, keepdim=True
-                )
-                batch_embeddings = image_features.cpu().numpy()
-
-            all_embeddings.append(batch_embeddings)
-
-        return np.vstack(all_embeddings)
-
     def get_embedding_dimension(self) -> int:
         """
         Get the dimension of the embedding vectors.
