@@ -15,14 +15,29 @@ An E-Commerce Product Retrieval System built with Flask and OpenAI's CLIP model.
 
 ```
 smartsearch-retrieval/
-├── app.py                          # Main Flask application with API endpoints
+├── app.py                          # Flask app entry point (creates app, registers blueprints)
+├── config.json                     # Model registry and application defaults
 ├── requirements.txt                # Python dependencies
 ├── data/                           # Data storage directory
 │   └── faiss_indices/              # Persistent FAISS index storage
+├── routes/
+│   ├── __init__.py
+│   ├── product_routes.py           # Add, update, delete product endpoints
+│   ├── search_routes.py            # Text, image, late fusion search endpoints
+│   └── system_routes.py            # Health check, index stats endpoints
+├── services/
+│   ├── __init__.py
+│   └── manager_service.py          # Model manager initialization and config loading
+├── utils/
+│   ├── __init__.py
+│   └── validation.py               # Request validation helpers
 ├── models/
+│   ├── clip_model_pool.py          # Shared CLIP model pool (avoids duplicate loading)
 │   ├── textual_models/
 │   │   ├── __init__.py
 │   │   ├── clip_text_embedder.py   # CLIP text embedding implementation
+│   │   ├── bge_base_embedder.py    # BGE text embedding implementation
+│   │   ├── qwen_8b_model.py        # Qwen text embedding implementation
 │   │   └── text_model_manager.py   # Text model management facade
 │   ├── visual_models/
 │   │   ├── __init__.py
@@ -32,12 +47,9 @@ smartsearch-retrieval/
 │       ├── __init__.py
 │       ├── clip_fused_embedder.py  # CLIP fused embedding implementation
 │       └── fused_model_manager.py  # Fused model management facade
-├── vector_db/
-│   ├── __init__.py
-│   └── faiss_manager.py            # FAISS index management
-├── test_textual_model.py           # Text model usage examples
-├── test_visual_model.py            # Visual model usage examples
-└── test_fused_model.py             # Fused model usage examples
+└── vector_db/
+    ├── __init__.py
+    └── faiss_manager.py            # FAISS index management
 ```
 
 ## 🛠️ Installation
@@ -207,6 +219,99 @@ POST /api/retrieval/search/late
         "text_weight": 0.5,
         "image_weight": 0.5,
         "total_results": 1
+    }
+}
+```
+
+### Update Product
+
+```http
+PUT /api/retrieval/update-product/<product_id>
+```
+
+Atomically removes old embeddings and re-indexes with new data.
+
+**Request Body:**
+```json
+{
+    "name": "Updated Leather Handbag",
+    "description": "Premium handmade leather bag with gold buckle",
+    "brand": "LuxuryBrand",
+    "category": "Accessories",
+    "price": 349.99,
+    "images": ["C:/absolute/path/to/new_image.jpg"],
+    "textual_model_name": "BAAI/bge-large-en-v1.5",
+    "visual_model_name": "ViT-B/32"
+}
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "message": "Product product_001 updated successfully",
+    "details": {
+        "product_id": "product_001",
+        "removed_counts": { "textual": 1, "visual": 2, "fused": 0 },
+        "textual_vector_id": 2,
+        "visual_vector_ids": [3],
+        "images_processed": 1
+    }
+}
+```
+
+### Delete Product
+
+```http
+DELETE /api/retrieval/delete-product/<product_id>
+```
+
+Removes all embeddings for a product from all FAISS indices.
+
+**Response:**
+```json
+{
+    "status": "success",
+    "message": "Product product_001 deleted successfully",
+    "details": {
+        "product_id": "product_001",
+        "removed_counts": { "textual": 1, "visual": 2, "fused": 0 },
+        "total_removed": 3
+    }
+}
+```
+
+### Image Search
+
+Search products using an image query.
+
+```http
+POST /api/retrieval/search/image
+```
+
+**Request Body:**
+```json
+{
+    "image": "C:/absolute/path/to/query_image.jpg",
+    "visual_model_name": "ViT-B/32",
+    "top_k": 10
+}
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "results": [
+        {
+            "product_id": "product_001",
+            "score": 0.827880,
+            "best_image_no": 0
+        }
+    ],
+    "meta": {
+        "total_results": 1,
+        "model_name": "ViT-B/32"
     }
 }
 ```
