@@ -198,7 +198,7 @@ def add_product():
 
         # Combine text fields and create textual embedding
         combined_text = combine_product_text(name, description, brand, category, price)
-        textual_embedding = textual_manager.get_embedding(combined_text)
+        textual_embedding = textual_manager.get_document_embedding(combined_text)
 
         # Add to textual index
         textual_vector_id = faiss_manager.add_to_textual(

@@ -106,7 +106,9 @@ class TextModelManager:
 
     def get_embedding(self, text: str) -> List[float]:
         """
-        Get embedding vector for a single text.
+        Get query embedding vector for a single text.
+        Uses query-specific encoding (adds instruction prefix for BGE/Qwen).
+        Use this for SEARCH QUERIES only.
 
         Args:
             text: Input text string.
@@ -118,6 +120,23 @@ class TextModelManager:
             raise RuntimeError("Model not initialized. Call _initialize_model() first.")
 
         return self.model.embed_query(text)
+
+    def get_document_embedding(self, text: str) -> List[float]:
+        """
+        Get document embedding vector for a single text.
+        Uses document-specific encoding (no instruction prefix).
+        Use this for INDEXING DOCUMENTS/PRODUCTS only.
+
+        Args:
+            text: Input text string.
+
+        Returns:
+            Embedding vector as a list of floats.
+        """
+        if self.model is None:
+            raise RuntimeError("Model not initialized. Call _initialize_model() first.")
+
+        return self.model.embed_documents([text])[0]
 
     def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
