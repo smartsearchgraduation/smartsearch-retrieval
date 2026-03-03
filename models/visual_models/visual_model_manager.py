@@ -4,7 +4,6 @@ Main class for managing and directing images to the appropriate visual model.
 Acts as a facade for all image embedding operations in the e-commerce retrieval system.
 """
 
-import numpy as np
 from typing import List, Dict, Union, Optional, Any
 from enum import Enum
 from pathlib import Path
@@ -132,32 +131,6 @@ class VisualModelManager:
             self._validate_image_path(path)
 
         return self.model.embed_images(image_paths)
-
-    def get_embeddings_batch(
-        self, image_paths: List[str], batch_size: int = 32
-    ) -> np.ndarray:
-        """
-        Get embedding vectors for images using batch processing.
-
-        Args:
-            image_paths: List of absolute paths to image files.
-            batch_size: Batch size for processing.
-
-        Returns:
-            Numpy array of embeddings with shape (num_images, embedding_dim).
-        """
-        if self.model is None:
-            raise RuntimeError("Model not initialized. Call _initialize_model() first.")
-
-        for path in image_paths:
-            self._validate_image_path(path)
-
-        if hasattr(self.model, "embed_batch"):
-            return self.model.embed_batch(image_paths, batch_size=batch_size)
-        else:
-            # Fallback to regular embedding
-            embeddings = self.model.embed_images(image_paths)
-            return np.array(embeddings)
 
     def get_embedding_from_pil(self, image: Image.Image) -> List[float]:
         """

@@ -107,48 +107,6 @@ class Qwen8BEmbedder(Embeddings):
 
         return embedding
 
-    def _get_batch_embeddings(self, texts: List[str]) -> np.ndarray:
-        """
-        Generate embeddings for a batch of texts.
-
-        Args:
-            texts: List of input text strings.
-
-        Returns:
-            Numpy array of shape (num_texts, embedding_dim).
-        """
-        with torch.no_grad():
-            # Tokenize all texts
-            encoded_input = self.tokenizer(
-                texts,
-                padding=True,
-                truncation=True,
-                max_length=8192,
-                return_tensors="pt",
-            ).to(self.device)
-
-            # Get model output
-            model_output = self.model(**encoded_input)
-
-            # Mean pooling
-            last_hidden_state = model_output.last_hidden_state
-            attention_mask = encoded_input["attention_mask"]
-
-            input_mask_expanded = (
-                attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-            )
-            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, dim=1)
-            sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
-            embeddings = sum_embeddings / sum_mask
-
-            # Normalize the embeddings
-            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-
-            # Convert to numpy array
-            embeddings = embeddings.cpu().numpy()
-
-        return embeddings
-
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
         Generate embeddings for a list of documents.
@@ -193,26 +151,6 @@ class Qwen8BEmbedder(Embeddings):
         """
         return self._embedding_dimension
 
-    def embed_batch(self, texts: List[str], batch_size: int = 8) -> np.ndarray:
-        """
-        Generate embeddings for texts in batches for better efficiency.
-
-        Args:
-            texts: List of texts to embed.
-            batch_size: Number of texts to process at once (smaller for large model).
-
-        Returns:
-            Numpy array of shape (num_texts, embedding_dim).
-        """
-        all_embeddings = []
-
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i : i + batch_size]
-            batch_embeddings = self._get_batch_embeddings(batch_texts)
-            all_embeddings.append(batch_embeddings)
-
-        return np.vstack(all_embeddings)
-
 
 # Example usage and testing
 if __name__ == "__main__":
@@ -235,10 +173,6 @@ if __name__ == "__main__":
     query = "stylish leather bag"
     query_embedding = embedder.embed_query(query)
     print(f"Query embedding dimension: {len(query_embedding)}")
-
-    # Test batch embedding
-    batch_embeddings = embedder.embed_batch(sample_texts)
-    print(f"Batch embeddings shape: {batch_embeddings.shape}")
 
     # Test get_embedding_dimension
     dim = embedder.get_embedding_dimension()

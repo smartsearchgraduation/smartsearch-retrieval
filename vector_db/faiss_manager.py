@@ -229,56 +229,6 @@ class FAISSManager:
 
             return vector_id
 
-    def add_batch_to_textual(
-        self,
-        embeddings: List[List[float]],
-        product_ids: List[str],
-        model_names: List[str],
-    ) -> List[int]:
-        """
-        Add multiple textual embeddings to the Textual index.
-
-        Args:
-            embeddings: List of embedding vectors.
-            product_ids: List of product identifiers.
-            model_names: List of model names.
-
-        Returns:
-            List of IDs of the added vectors.
-        """
-        ids = []
-        for emb, pid, mname in zip(embeddings, product_ids, model_names):
-            vector_id = self.add_to_textual(emb, pid, mname)
-            ids.append(vector_id)
-        return ids
-
-    def add_batch_to_visual(
-        self,
-        embeddings: List[List[float]],
-        product_ids: List[str],
-        image_nos: List[int],
-        model_names: List[str],
-    ) -> List[int]:
-        """
-        Add multiple visual embeddings to the Visual index.
-
-        Args:
-            embeddings: List of embedding vectors.
-            product_ids: List of product identifiers.
-            image_nos: List of image numbers.
-            model_names: List of model names.
-
-        Returns:
-            List of IDs of the added vectors.
-        """
-        ids = []
-        for emb, pid, ino, mname in zip(
-            embeddings, product_ids, image_nos, model_names
-        ):
-            vector_id = self.add_to_visual(emb, pid, ino, mname)
-            ids.append(vector_id)
-        return ids
-
     def search(
         self,
         index_type: IndexType,

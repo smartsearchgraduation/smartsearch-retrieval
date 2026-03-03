@@ -37,22 +37,13 @@ class CLIPTextEmbedder(Embeddings):
         self._load_model()
 
     def _load_model(self):
-        """Load the CLIP model and preprocessing function."""
-        try:
-            import clip
+        """Load the CLIP model from shared pool."""
+        from models.clip_model_pool import CLIPModelPool
 
-            self.model, self.preprocess = clip.load(self.model_name, device=self.device)
-            self.model.eval()
-            print(
-                f"[CLIPTextEmbedder] Loaded CLIP model: {self.model_name} on {self.device}"
-            )
-        except ImportError:
-            raise ImportError(
-                "CLIP is not installed. Please install it via: "
-                "pip install git+https://github.com/openai/CLIP.git"
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to load CLIP model: {e}")
+        self.model, self.preprocess = CLIPModelPool.get(self.model_name, self.device)
+        print(
+            f"[CLIPTextEmbedder] Using CLIP model: {self.model_name} on {self.device}"
+        )
 
     def _get_text_embedding(self, text: str) -> np.ndarray:
         """
@@ -121,34 +112,6 @@ class CLIPTextEmbedder(Embeddings):
         dummy_embedding = self._get_text_embedding("test")
         return len(dummy_embedding)
 
-    def embed_batch(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
-        """
-        Generate embeddings for texts in batches for better efficiency.
-
-        Args:
-            texts: List of texts to embed.
-            batch_size: Number of texts to process at once.
-
-        Returns:
-            Numpy array of shape (num_texts, embedding_dim).
-        """
-        import clip
-
-        all_embeddings = []
-
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i : i + batch_size]
-
-            with torch.no_grad():
-                text_tokens = clip.tokenize(batch_texts, truncate=True).to(self.device)
-                text_features = self.model.encode_text(text_tokens)
-                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-                batch_embeddings = text_features.cpu().numpy()
-
-            all_embeddings.append(batch_embeddings)
-
-        return np.vstack(all_embeddings)
-
 
 # Example usage and testing
 if __name__ == "__main__":
@@ -171,7 +134,3 @@ if __name__ == "__main__":
     query = "stylish leather bag"
     query_embedding = embedder.embed_query(query)
     print(f"Query embedding dimension: {len(query_embedding)}")
-
-    # Test batch embedding
-    batch_embeddings = embedder.embed_batch(sample_texts)
-    print(f"Batch embeddings shape: {batch_embeddings.shape}")

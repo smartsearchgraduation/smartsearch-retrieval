@@ -4,7 +4,6 @@ Main class for managing and directing text to the appropriate textual model.
 Acts as a facade for all text embedding operations in the e-commerce retrieval system.
 """
 
-import numpy as np
 from typing import List, Dict, Union, Optional, Any
 from enum import Enum
 
@@ -106,7 +105,9 @@ class TextModelManager:
 
     def get_embedding(self, text: str) -> List[float]:
         """
-        Get embedding vector for a single text.
+        Get query embedding vector for a single text.
+        Uses query-specific encoding (adds instruction prefix for BGE/Qwen).
+        Use this for SEARCH QUERIES only.
 
         Args:
             text: Input text string.
@@ -118,6 +119,23 @@ class TextModelManager:
             raise RuntimeError("Model not initialized. Call _initialize_model() first.")
 
         return self.model.embed_query(text)
+
+    def get_document_embedding(self, text: str) -> List[float]:
+        """
+        Get document embedding vector for a single text.
+        Uses document-specific encoding (no instruction prefix).
+        Use this for INDEXING DOCUMENTS/PRODUCTS only.
+
+        Args:
+            text: Input text string.
+
+        Returns:
+            Embedding vector as a list of floats.
+        """
+        if self.model is None:
+            raise RuntimeError("Model not initialized. Call _initialize_model() first.")
+
+        return self.model.embed_documents([text])[0]
 
     def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
@@ -133,29 +151,6 @@ class TextModelManager:
             raise RuntimeError("Model not initialized. Call _initialize_model() first.")
 
         return self.model.embed_documents(texts)
-
-    def get_embeddings_batch(
-        self, texts: List[str], batch_size: int = 32
-    ) -> np.ndarray:
-        """
-        Get embedding vectors for texts using batch processing.
-
-        Args:
-            texts: List of input text strings.
-            batch_size: Batch size for processing.
-
-        Returns:
-            Numpy array of embeddings with shape (num_texts, embedding_dim).
-        """
-        if self.model is None:
-            raise RuntimeError("Model not initialized. Call _initialize_model() first.")
-
-        if hasattr(self.model, "embed_batch"):
-            return self.model.embed_batch(texts, batch_size=batch_size)
-        else:
-            # Fallback to regular embedding
-            embeddings = self.model.embed_documents(texts)
-            return np.array(embeddings)
 
     def get_embedding_dimension(self) -> int:
         """

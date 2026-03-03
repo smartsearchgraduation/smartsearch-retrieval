@@ -38,22 +38,13 @@ class CLIPImageEmbedder:
         self._load_model()
 
     def _load_model(self):
-        """Load the CLIP model and preprocessing function."""
-        try:
-            import clip
+        """Load the CLIP model from shared pool."""
+        from models.clip_model_pool import CLIPModelPool
 
-            self.model, self.preprocess = clip.load(self.model_name, device=self.device)
-            self.model.eval()
-            print(
-                f"[CLIPImageEmbedder] Loaded CLIP model: {self.model_name} on {self.device}"
-            )
-        except ImportError:
-            raise ImportError(
-                "CLIP is not installed. Please install it via: "
-                "pip install git+https://github.com/openai/CLIP.git"
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to load CLIP model: {e}")
+        self.model, self.preprocess = CLIPModelPool.get(self.model_name, self.device)
+        print(
+            f"[CLIPImageEmbedder] Using CLIP model: {self.model_name} on {self.device}"
+        )
 
     def _load_image(self, image_path: str) -> Image.Image:
         """
@@ -173,43 +164,6 @@ class CLIPImageEmbedder:
         """
         embedding = self._get_embedding_from_pil(image)
         return embedding.tolist()
-
-    def embed_batch(self, image_paths: List[str], batch_size: int = 32) -> np.ndarray:
-        """
-        Generate embeddings for images in batches for better efficiency.
-
-        Args:
-            image_paths: List of absolute paths to image files.
-            batch_size: Number of images to process at once.
-
-        Returns:
-            Numpy array of shape (num_images, embedding_dim).
-        """
-        all_embeddings = []
-
-        for i in range(0, len(image_paths), batch_size):
-            batch_paths = image_paths[i : i + batch_size]
-
-            # Load and preprocess batch of images
-            batch_tensors = []
-            for image_path in batch_paths:
-                image = self._load_image(image_path)
-                image_tensor = self.preprocess(image)
-                batch_tensors.append(image_tensor)
-
-            # Stack tensors into a batch
-            batch_tensor = torch.stack(batch_tensors).to(self.device)
-
-            with torch.no_grad():
-                image_features = self.model.encode_image(batch_tensor)
-                image_features = image_features / image_features.norm(
-                    dim=-1, keepdim=True
-                )
-                batch_embeddings = image_features.cpu().numpy()
-
-            all_embeddings.append(batch_embeddings)
-
-        return np.vstack(all_embeddings)
 
     def get_embedding_dimension(self) -> int:
         """
