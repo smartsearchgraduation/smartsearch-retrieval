@@ -4,7 +4,7 @@ System Routes — health check, index stats endpoints.
 
 from flask import Blueprint, jsonify
 
-from services.manager_service import get_faiss_manager
+from services.manager_service import get_faiss_manager, get_available_models
 
 
 system_bp = Blueprint("system", __name__)
@@ -34,6 +34,46 @@ def get_index_stats():
                 {
                     "status": "success",
                     "indices": sizes,
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@system_bp.route("/api/retrieval/models", methods=["GET"])
+def get_models():
+    """
+    List available embedding models and defaults.
+
+    Response:
+    {
+        "status": "success",
+        "data": {
+            "textual_models": [{"name": "...", "dimension": 512}, ...],
+            "visual_models": [...],
+            "defaults": {"textual": "...", "visual": "..."}
+        }
+    }
+    """
+    try:
+        models_data = get_available_models()
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "data": models_data,
                 }
             ),
             200,

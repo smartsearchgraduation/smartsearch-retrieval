@@ -24,6 +24,7 @@ _faiss_manager: Optional[FAISSManager] = None
 # Configuration (loaded at module import)
 _config = None
 MODEL_REGISTRY = {}
+DEFAULT_MODELS: Dict[str, str] = {}
 DEFAULT_DIMENSION = 512
 INDEX_PATH = "./data/faiss_indices"
 HOST = "0.0.0.0"
@@ -34,7 +35,7 @@ DEFAULT_TOP_K = 10
 
 def load_config() -> dict:
     """Load configuration from config.json and initialize module-level variables."""
-    global _config, MODEL_REGISTRY, DEFAULT_DIMENSION, INDEX_PATH
+    global _config, MODEL_REGISTRY, DEFAULT_MODELS, DEFAULT_DIMENSION, INDEX_PATH
     global HOST, PORT, MAX_TOP_K, DEFAULT_TOP_K
 
     config_path = os.path.join(
@@ -49,6 +50,7 @@ def load_config() -> dict:
         raise RuntimeError(f"Invalid JSON in configuration file: {e}")
 
     MODEL_REGISTRY = _config["models"]
+    DEFAULT_MODELS = _config.get("default_models", {})
     defaults = _config.get("defaults", {})
     DEFAULT_DIMENSION = defaults.get("dimension", 512)
     INDEX_PATH = defaults.get("index_path", "./data/faiss_indices")
@@ -162,3 +164,26 @@ def combine_product_text(
     if price:
         parts.append(f"Price: {price}")
     return " ".join(parts)
+
+
+def get_available_models() -> dict:
+    """Return available models categorized by type, with defaults."""
+    textual_models = []
+    visual_models = []
+
+    for name, info in MODEL_REGISTRY.items():
+        entry = {"name": name, "dimension": info["dimension"]}
+        # All models support text embeddings
+        textual_models.append(entry)
+        # Only CLIP models support image embeddings
+        if info["type"] == "clip":
+            visual_models.append(entry)
+
+    return {
+        "textual_models": textual_models,
+        "visual_models": visual_models,
+        "defaults": {
+            "textual": DEFAULT_MODELS.get("textual", ""),
+            "visual": DEFAULT_MODELS.get("visual", ""),
+        },
+    }

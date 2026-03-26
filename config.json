@@ -13,6 +13,10 @@
             "dimension": 4096
         }
     },
+    "default_models": {
+        "textual": "BAAI/bge-large-en-v1.5",
+        "visual": "ViT-B/32"
+    },
     "defaults": {
         "dimension": 512,
         "top_k": 10,

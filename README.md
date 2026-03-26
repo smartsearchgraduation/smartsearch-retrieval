@@ -24,7 +24,7 @@ smartsearch-retrieval/
 │   ├── __init__.py
 │   ├── product_routes.py           # Add, update, delete product endpoints
 │   ├── search_routes.py            # Text, image, late fusion search endpoints
-│   └── system_routes.py            # Health check, index stats endpoints
+│   └── system_routes.py            # Health check, index stats, models endpoints
 ├── services/
 │   ├── __init__.py
 │   └── manager_service.py          # Model manager initialization and config loading
@@ -97,58 +97,9 @@ Start the Flask server:
 python app.py
 ```
 
-The server will start on `http://0.0.0.0:5000`
+The server will start on `http://0.0.0.0:5002`
 
 ## 📡 API Endpoints
-
-### Health Check
-
-```http
-GET /api/health
-```
-
-**Response:**
-```json
-{
-    "status": "healthy",
-    "service": "E-Commerce Product Retrieval System"
-}
-```
-
-### Add Product
-
-```http
-POST /api/retrieval/add-product
-```
-
-**Request Body:**
-```json
-{
-    "id": "product_001",
-    "name": "Premium Leather Handbag",
-    "description": "Elegant handcrafted leather bag",
-    "brand": "LuxuryBrand",
-    "category": "Accessories",
-    "price": 299.99,
-    "images": ["C:/absolute/path/to/image1.jpg", "C:/absolute/path/to/image2.jpg"],
-    "textual_model_name": "ViT-B/32",
-    "visual_model_name": "ViT-B/32"
-}
-```
-
-**Response:**
-```json
-{
-    "status": "success",
-    "message": "Product product_001 added successfully",
-    "details": {
-        "product_id": "product_001",
-        "textual_vector_id": 0,
-        "visual_vector_ids": [0, 1],
-        "images_processed": 2
-    }
-}
-```
 
 ### Text Search
 
@@ -173,6 +124,41 @@ POST /api/retrieval/search/text
         {
             "product_id": "product_001",
             "score": 0.856432
+        }
+    ],
+    "meta": {
+        "total_results": 1,
+        "model_name": "ViT-B/32"
+    }
+}
+```
+
+### Image Search
+
+Search products using an image query.
+
+```http
+POST /api/retrieval/search/image
+```
+
+**Request Body:**
+```json
+{
+    "image": "C:/absolute/path/to/query_image.jpg",
+    "visual_model_name": "ViT-B/32",
+    "top_k": 10
+}
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "results": [
+        {
+            "product_id": "product_001",
+            "score": 0.827880,
+            "best_image_no": 0
         }
     ],
     "meta": {
@@ -219,6 +205,41 @@ POST /api/retrieval/search/late
         "text_weight": 0.5,
         "image_weight": 0.5,
         "total_results": 1
+    }
+}
+```
+
+### Add Product
+
+```http
+POST /api/retrieval/add-product
+```
+
+**Request Body:**
+```json
+{
+    "id": "product_001",
+    "name": "Premium Leather Handbag",
+    "description": "Elegant handcrafted leather bag",
+    "brand": "LuxuryBrand",
+    "category": "Accessories",
+    "price": 299.99,
+    "images": ["C:/absolute/path/to/image1.jpg", "C:/absolute/path/to/image2.jpg"],
+    "textual_model_name": "ViT-B/32",
+    "visual_model_name": "ViT-B/32"
+}
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "message": "Product product_001 added successfully",
+    "details": {
+        "product_id": "product_001",
+        "textual_vector_id": 0,
+        "visual_vector_ids": [0, 1],
+        "images_processed": 2
     }
 }
 ```
@@ -281,38 +302,17 @@ Removes all embeddings for a product from all FAISS indices.
 }
 ```
 
-### Image Search
-
-Search products using an image query.
+### Health Check
 
 ```http
-POST /api/retrieval/search/image
-```
-
-**Request Body:**
-```json
-{
-    "image": "C:/absolute/path/to/query_image.jpg",
-    "visual_model_name": "ViT-B/32",
-    "top_k": 10
-}
+GET /api/health
 ```
 
 **Response:**
 ```json
 {
-    "status": "success",
-    "results": [
-        {
-            "product_id": "product_001",
-            "score": 0.827880,
-            "best_image_no": 0
-        }
-    ],
-    "meta": {
-        "total_results": 1,
-        "model_name": "ViT-B/32"
-    }
+    "status": "healthy",
+    "service": "E-Commerce Product Retrieval System"
 }
 ```
 
@@ -330,6 +330,35 @@ GET /api/retrieval/index-stats
         "textual": 100,
         "visual": 250,
         "fused": 0
+    }
+}
+```
+
+### Available Models
+
+List all available embedding models categorized by type, along with default selections.
+
+```http
+GET /api/retrieval/models
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "data": {
+        "textual_models": [
+            { "name": "ViT-B/32", "dimension": 512 },
+            { "name": "BAAI/bge-large-en-v1.5", "dimension": 1024 },
+            { "name": "Qwen/Qwen3-Embedding-8B", "dimension": 4096 }
+        ],
+        "visual_models": [
+            { "name": "ViT-B/32", "dimension": 512 }
+        ],
+        "defaults": {
+            "textual": "BAAI/bge-large-en-v1.5",
+            "visual": "ViT-B/32"
+        }
     }
 }
 ```
