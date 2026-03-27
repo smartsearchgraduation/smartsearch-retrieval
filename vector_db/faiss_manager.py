@@ -61,6 +61,7 @@ class FAISSManager:
         # Initialize indices
         self.indices: Dict[IndexType, faiss.Index] = {}
         self.metadata: Dict[IndexType, List[Dict[str, Any]]] = {}
+        self._metadata_index: Dict[IndexType, Dict[int, Dict[str, Any]]] = {}
         self.id_counters: Dict[IndexType, int] = {}
 
         # Thread lock for thread-safe operations
@@ -106,6 +107,7 @@ class FAISSManager:
 
         self.indices[index_type] = index
         self.metadata[index_type] = []
+        self._metadata_index[index_type] = {}
         self.id_counters[index_type] = 0
 
         print(
@@ -226,6 +228,7 @@ class FAISSManager:
             # Store metadata with the vector ID
             metadata["_vector_id"] = vector_id
             self.metadata[index_type].append(metadata)
+            self._metadata_index[index_type][vector_id] = metadata
 
             return vector_id
 
@@ -316,10 +319,7 @@ class FAISSManager:
         self, index_type: IndexType, vector_id: int
     ) -> Optional[Dict[str, Any]]:
         """Get metadata for a specific vector ID."""
-        for meta in self.metadata[index_type]:
-            if meta.get("_vector_id") == vector_id:
-                return meta
-        return None
+        return self._metadata_index[index_type].get(vector_id)
 
     def get_index_size(self, index_type: IndexType) -> int:
         """Get the number of vectors in an index."""
@@ -367,6 +367,9 @@ class FAISSManager:
 
             # Update metadata
             self.metadata[index_type] = metadata_to_keep
+            self._metadata_index[index_type] = {
+                int(meta["_vector_id"]): meta for meta in metadata_to_keep
+            }
 
             return removed_count
 
@@ -456,6 +459,11 @@ class FAISSManager:
                     with open(meta_file, "r") as f:
                         data = json.load(f)
                         self.metadata[index_type] = data["metadata"]
+                        self._metadata_index[index_type] = {
+                            int(meta["_vector_id"]): meta
+                            for meta in self.metadata[index_type]
+                            if "_vector_id" in meta
+                        }
                         self.id_counters[index_type] = data["id_counter"]
 
                     print(
