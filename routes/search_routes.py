@@ -12,7 +12,14 @@ from services.manager_service import (
     get_textual_manager,
     get_visual_manager,
 )
-from utils.validation import validate_required_fields, validate_top_k
+from utils.validation import (
+    deduplicate_text_results,
+    deduplicate_visual_results,
+    validate_image_file_size,
+    validate_required_fields,
+    validate_text_length,
+    validate_top_k,
+)
 
 
 search_bp = Blueprint("search", __name__)
@@ -68,6 +75,9 @@ def late_fusion_search():
         visual_model_name = data["visual_model_name"]
         top_k = validate_top_k(data)
 
+        validate_text_length(text)
+        validate_image_file_size(image_path)
+
         # Validate text_weight
         if not 0 <= text_weight <= 1:
             return (
@@ -119,36 +129,9 @@ def late_fusion_search():
             textual_results = future_textual.result()
             visual_results = future_visual.result()
 
-        # Process textual results: one entry per product
-        text_scores: Dict[str, float] = {}
-        for result in textual_results:
-            product_id = result["product_id"]
-            score = result["score"]
-            if product_id not in text_scores:
-                text_scores[product_id] = score
-            else:
-                # Keep the highest score
-                text_scores[product_id] = max(text_scores[product_id], score)
-
-        # Process visual results: keep best score and image_no per product
-        visual_scores: Dict[str, Dict[str, Any]] = {}
-        for result in visual_results:
-            product_id = result["product_id"]
-            score = result["score"]
-            image_no = result.get("image_no", 0)
-
-            if product_id not in visual_scores:
-                visual_scores[product_id] = {
-                    "score": score,
-                    "image_no": image_no,
-                }
-            else:
-                # Keep the highest score and its corresponding image_no
-                if score > visual_scores[product_id]["score"]:
-                    visual_scores[product_id] = {
-                        "score": score,
-                        "image_no": image_no,
-                    }
+        # Keep one best result per product for each modality
+        text_scores = deduplicate_text_results(textual_results)
+        visual_scores = deduplicate_visual_results(visual_results)
 
         # Combine results using late fusion
         # Get all unique product IDs from both indices
@@ -263,6 +246,8 @@ def text_search():
         textual_model_name = data["textual_model_name"]
         top_k = validate_top_k(data)
 
+        validate_text_length(text)
+
         # Get managers
         faiss_manager = get_faiss_manager(
             textual_model_name=textual_model_name,
@@ -280,14 +265,7 @@ def text_search():
         )
 
         # Deduplicate: keep only the best score per product
-        product_scores: Dict[str, float] = {}
-        for result in search_results:
-            product_id = result["product_id"]
-            score = result["score"]
-            if product_id not in product_scores:
-                product_scores[product_id] = score
-            else:
-                product_scores[product_id] = max(product_scores[product_id], score)
+        product_scores = deduplicate_text_results(search_results)
 
         # Build results list
         results = [
@@ -377,6 +355,8 @@ def image_search():
         visual_model_name = data["visual_model_name"]
         top_k = validate_top_k(data)
 
+        validate_image_file_size(image_path)
+
         # Get managers
         faiss_manager = get_faiss_manager(
             visual_model_name=visual_model_name,
@@ -394,23 +374,7 @@ def image_search():
         )
 
         # Deduplicate: keep best score and image_no per product
-        product_scores: Dict[str, Dict[str, Any]] = {}
-        for result in search_results:
-            product_id = result["product_id"]
-            score = result["score"]
-            image_no = result.get("image_no", 0)
-
-            if product_id not in product_scores:
-                product_scores[product_id] = {
-                    "score": score,
-                    "image_no": image_no,
-                }
-            else:
-                if score > product_scores[product_id]["score"]:
-                    product_scores[product_id] = {
-                        "score": score,
-                        "image_no": image_no,
-                    }
+        product_scores = deduplicate_visual_results(search_results)
 
         # Build results list
         results = [
