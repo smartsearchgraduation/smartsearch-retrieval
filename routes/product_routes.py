@@ -12,7 +12,11 @@ from services.manager_service import (
     get_visual_manager,
     combine_product_text,
 )
-from utils.validation import validate_required_fields
+from utils.validation import (
+    validate_image_file_size,
+    validate_required_fields,
+    validate_text_length,
+)
 
 
 product_bp = Blueprint("product", __name__)
@@ -75,6 +79,7 @@ def add_product():
 
         # Combine text fields and create textual embedding
         combined_text = combine_product_text(name, description, brand, category, price)
+        validate_text_length(combined_text)
         textual_embedding = textual_manager.get_document_embedding(combined_text)
 
         # Add to textual index
@@ -88,6 +93,7 @@ def add_product():
         visual_vector_ids = []
         for image_no, image_path in enumerate(images):
             try:
+                validate_image_file_size(image_path)
                 visual_embedding = visual_manager.get_embedding(image_path)
                 visual_vector_id = faiss_manager.add_to_visual(
                     embedding=visual_embedding,
@@ -311,6 +317,7 @@ def update_product(product_id: str):
 
         # Step 2: Generate and add new textual embedding
         combined_text = combine_product_text(name, description, brand, category, price)
+        validate_text_length(combined_text)
         textual_embedding = textual_manager.get_document_embedding(combined_text)
 
         textual_vector_id = faiss_manager.add_to_textual(
@@ -323,6 +330,7 @@ def update_product(product_id: str):
         visual_vector_ids = []
         for image_no, image_path in enumerate(images):
             try:
+                validate_image_file_size(image_path)
                 visual_embedding = visual_manager.get_embedding(image_path)
                 visual_vector_id = faiss_manager.add_to_visual(
                     embedding=visual_embedding,
