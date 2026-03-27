@@ -92,11 +92,9 @@ def late_fusion_search():
 
         image_weight = 1 - text_weight
 
-        # Get managers
-        faiss_manager = get_faiss_manager(
-            textual_model_name=textual_model_name,
-            visual_model_name=visual_model_name,
-        )
+        # Get separate FAISS managers per model
+        textual_faiss = get_faiss_manager(textual_model_name)
+        visual_faiss = get_faiss_manager(visual_model_name)
         textual_manager = get_textual_manager(textual_model_name)
         visual_manager = get_visual_manager(visual_model_name)
 
@@ -109,14 +107,14 @@ def late_fusion_search():
         visual_results = []
 
         def search_textual():
-            return faiss_manager.search_textual(
+            return textual_faiss.search_textual(
                 query_embedding=text_embedding,
                 top_k=top_k * 5,  # Get more results for better fusion
                 model_name=textual_model_name,
             )
 
         def search_visual():
-            return faiss_manager.search_visual(
+            return visual_faiss.search_visual(
                 query_embedding=image_embedding,
                 top_k=top_k * 5,  # Get more results for better fusion
                 model_name=visual_model_name,
@@ -249,9 +247,7 @@ def text_search():
         validate_text_length(text)
 
         # Get managers
-        faiss_manager = get_faiss_manager(
-            textual_model_name=textual_model_name,
-        )
+        faiss_manager = get_faiss_manager(textual_model_name)
         textual_manager = get_textual_manager(textual_model_name)
 
         # Generate text embedding
@@ -358,9 +354,7 @@ def image_search():
         validate_image_file_size(image_path)
 
         # Get managers
-        faiss_manager = get_faiss_manager(
-            visual_model_name=visual_model_name,
-        )
+        faiss_manager = get_faiss_manager(visual_model_name)
         visual_manager = get_visual_manager(visual_model_name)
 
         # Generate image embedding

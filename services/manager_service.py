@@ -4,8 +4,10 @@ Manager Service — centralizes initialization and access to model managers and 
 All lazy-initialization logic for TextModelManager, VisualModelManager,
 FusedModelManager, and FAISSManager lives here.
 
-Each model stores its embeddings in a separate folder under DATA_BASE_PATH:
+Each model stores its embeddings in its own folder under DATA_BASE_PATH:
     <sanitized_model_name>_<dimension>_embeddings/
+Callers use separate FAISSManager instances for different models (e.g. one
+for the textual model, another for the visual model).
 """
 
 import json
@@ -71,24 +73,17 @@ def _get_model_dimension(model_name: str) -> int:
     return MODEL_REGISTRY.get(model_name, {}).get("dimension", DEFAULT_DIMENSION)
 
 
-def get_faiss_manager(
-    textual_model_name: str = None,
-    visual_model_name: str = None,
-    fused_model_name: str = None,
-) -> FAISSManager:
+def get_faiss_manager(model_name: str = None) -> FAISSManager:
     """
-    Get or create a FAISSManager for the given model combination.
+    Get or create a FAISSManager for a single model.
 
-    Each unique model gets its own folder under DATA_BASE_PATH.
-    The folder is named: <sanitized_model_name>_<dimension>_embeddings/
+    Each model gets its own folder under DATA_BASE_PATH:
+        <sanitized_model_name>_<dimension>_embeddings/
 
-    For textual-only or visual-only models, a single model determines the folder.
-    For CLIP (shared text+image), one folder holds both textual and visual indices.
+    Callers that use different models for textual and visual embeddings
+    should call this function separately for each model.
     """
-    # Determine the primary model name for the folder
-    model_name = textual_model_name or visual_model_name or fused_model_name
     if model_name is None:
-        # Fallback: return the first cached manager or create with defaults
         if _faiss_managers:
             return next(iter(_faiss_managers.values()))
         model_name = DEFAULT_MODELS.get("textual", "")
@@ -101,11 +96,6 @@ def get_faiss_manager(
         _faiss_managers[folder_name] = FAISSManager(
             dimension=dimension,
             index_path=index_path,
-            dimensions={
-                "textual": _get_model_dimension(textual_model_name) if textual_model_name else dimension,
-                "visual": _get_model_dimension(visual_model_name) if visual_model_name else dimension,
-                "fused": _get_model_dimension(fused_model_name) if fused_model_name else dimension,
-            },
         )
     return _faiss_managers[folder_name]
 

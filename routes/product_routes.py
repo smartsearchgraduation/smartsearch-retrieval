@@ -71,14 +71,12 @@ def add_product():
         visual_model_name = data["visual_model_name"]
         # fused_model_name = data.get("fused_model_name")  # Not used for now
 
-        # Get managers
-        faiss_manager = get_faiss_manager(
-            textual_model_name=textual_model_name,
-            visual_model_name=visual_model_name,
-        )
+        # Get separate FAISS managers per model
+        textual_faiss = get_faiss_manager(textual_model_name)
+        visual_faiss = get_faiss_manager(visual_model_name)
 
         # Check if product already has embeddings for the active model
-        if faiss_manager.has_product(IndexType.TEXTUAL, product_id):
+        if textual_faiss.has_product(IndexType.TEXTUAL, product_id):
             return (
                 jsonify(
                     {
@@ -102,7 +100,7 @@ def add_product():
         textual_embedding = textual_manager.get_document_embedding(combined_text)
 
         # Add to textual index
-        textual_vector_id = faiss_manager.add_to_textual(
+        textual_vector_id = textual_faiss.add_to_textual(
             embedding=textual_embedding,
             product_id=product_id,
             model_name=textual_model_name,
@@ -114,7 +112,7 @@ def add_product():
             try:
                 validate_image_file_size(image_path)
                 visual_embedding = visual_manager.get_embedding(image_path)
-                visual_vector_id = faiss_manager.add_to_visual(
+                visual_vector_id = visual_faiss.add_to_visual(
                     embedding=visual_embedding,
                     product_id=product_id,
                     image_no=image_no,
@@ -142,7 +140,9 @@ def add_product():
                     400,
                 )
 
-        faiss_manager.save()
+        textual_faiss.save()
+        if visual_faiss is not textual_faiss:
+            visual_faiss.save()
         return (
             jsonify(
                 {
@@ -323,11 +323,9 @@ def update_product(product_id: str):
         # Step 1: Remove old embeddings from ALL model folders
         all_removed = remove_product_from_all_models(product_id)
 
-        # Get managers for the active model
-        faiss_manager = get_faiss_manager(
-            textual_model_name=textual_model_name,
-            visual_model_name=visual_model_name,
-        )
+        # Get separate FAISS managers per model
+        textual_faiss = get_faiss_manager(textual_model_name)
+        visual_faiss = get_faiss_manager(visual_model_name)
         textual_manager = get_textual_manager(textual_model_name)
         visual_manager = get_visual_manager(visual_model_name)
 
@@ -336,7 +334,7 @@ def update_product(product_id: str):
         validate_text_length(combined_text)
         textual_embedding = textual_manager.get_document_embedding(combined_text)
 
-        textual_vector_id = faiss_manager.add_to_textual(
+        textual_vector_id = textual_faiss.add_to_textual(
             embedding=textual_embedding,
             product_id=product_id,
             model_name=textual_model_name,
@@ -348,7 +346,7 @@ def update_product(product_id: str):
             try:
                 validate_image_file_size(image_path)
                 visual_embedding = visual_manager.get_embedding(image_path)
-                visual_vector_id = faiss_manager.add_to_visual(
+                visual_vector_id = visual_faiss.add_to_visual(
                     embedding=visual_embedding,
                     product_id=product_id,
                     image_no=image_no,
@@ -377,7 +375,9 @@ def update_product(product_id: str):
                 )
 
         # Step 4: Save indices
-        faiss_manager.save()
+        textual_faiss.save()
+        if visual_faiss is not textual_faiss:
+            visual_faiss.save()
 
         return (
             jsonify(
