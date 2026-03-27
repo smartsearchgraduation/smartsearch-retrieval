@@ -11,7 +11,9 @@ from services.manager_service import (
     get_textual_manager,
     get_visual_manager,
     combine_product_text,
+    remove_product_from_all_models,
 )
+from vector_db.faiss_manager import IndexType
 from utils.validation import (
     validate_image_file_size,
     validate_required_fields,
@@ -74,6 +76,23 @@ def add_product():
             textual_model_name=textual_model_name,
             visual_model_name=visual_model_name,
         )
+
+        # Check if product already has embeddings for the active model
+        if faiss_manager.has_product(IndexType.TEXTUAL, product_id):
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": f"Product {product_id} already has embeddings for this model, skipping",
+                        "details": {
+                            "product_id": product_id,
+                            "skipped": True,
+                        },
+                    }
+                ),
+                200,
+            )
+
         textual_manager = get_textual_manager(textual_model_name)
         visual_manager = get_visual_manager(visual_model_name)
 
@@ -189,12 +208,12 @@ def delete_product(product_id: str):
                 400,
             )
 
-        # Get FAISS manager
-        faiss_manager = get_faiss_manager()
+        # Remove product from ALL model folders
+        all_removed = remove_product_from_all_models(product_id)
 
-        # Remove product from all indices
-        removed_counts = faiss_manager.remove_product_from_all(product_id)
-        total_removed = sum(removed_counts.values())
+        total_removed = sum(
+            sum(counts.values()) for counts in all_removed.values()
+        )
 
         if total_removed == 0:
             return (
@@ -207,9 +226,6 @@ def delete_product(product_id: str):
                 404,
             )
 
-        # Save indices after deletion
-        faiss_manager.save()
-
         return (
             jsonify(
                 {
@@ -217,7 +233,7 @@ def delete_product(product_id: str):
                     "message": f"Product {product_id} deleted successfully",
                     "details": {
                         "product_id": product_id,
-                        "removed_counts": removed_counts,
+                        "removed_counts": all_removed,
                         "total_removed": total_removed,
                     },
                 }
@@ -304,16 +320,16 @@ def update_product(product_id: str):
         textual_model_name = data["textual_model_name"]
         visual_model_name = data["visual_model_name"]
 
-        # Get managers
+        # Step 1: Remove old embeddings from ALL model folders
+        all_removed = remove_product_from_all_models(product_id)
+
+        # Get managers for the active model
         faiss_manager = get_faiss_manager(
             textual_model_name=textual_model_name,
             visual_model_name=visual_model_name,
         )
         textual_manager = get_textual_manager(textual_model_name)
         visual_manager = get_visual_manager(visual_model_name)
-
-        # Step 1: Remove old embeddings for this product
-        removed_counts = faiss_manager.remove_product_from_all(product_id)
 
         # Step 2: Generate and add new textual embedding
         combined_text = combine_product_text(name, description, brand, category, price)
@@ -370,7 +386,7 @@ def update_product(product_id: str):
                     "message": f"Product {product_id} updated successfully",
                     "details": {
                         "product_id": product_id,
-                        "removed_counts": removed_counts,
+                        "removed_counts": all_removed,
                         "textual_vector_id": textual_vector_id,
                         "visual_vector_ids": visual_vector_ids,
                         "images_processed": len(visual_vector_ids),

@@ -61,7 +61,7 @@ class TestLoadConfig:
                 "dimension": 256,
                 "top_k": 5,
                 "max_top_k": 50,
-                "index_path": "/tmp/idx",
+                "data_base_path": "/tmp/idx",
                 "host": "127.0.0.1",
                 "port": 9999,
             },

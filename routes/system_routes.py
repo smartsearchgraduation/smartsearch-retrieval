@@ -4,7 +4,7 @@ System Routes — health check, index stats endpoints.
 
 from flask import Blueprint, jsonify
 
-from services.manager_service import get_faiss_manager, get_available_models
+from services.manager_service import get_available_models, get_all_index_stats
 
 
 system_bp = Blueprint("system", __name__)
@@ -13,27 +13,25 @@ system_bp = Blueprint("system", __name__)
 @system_bp.route("/api/retrieval/index-stats", methods=["GET"])
 def get_index_stats():
     """
-    Get statistics about the FAISS indices.
+    Get per-model statistics about the FAISS indices.
 
     Response:
     {
         "status": "success",
         "indices": {
-            "textual": 100,
-            "visual": 250,
-            "fused": 0
+            "bge-large-en-v1.5_1024_embeddings": {"textual": 50, "visual": 0, "fused": 0},
+            "ViT-B-32_512_embeddings": {"textual": 0, "visual": 120, "fused": 0}
         }
     }
     """
     try:
-        faiss_manager = get_faiss_manager()
-        sizes = faiss_manager.get_all_sizes()
+        stats = get_all_index_stats()
 
         return (
             jsonify(
                 {
                     "status": "success",
-                    "indices": sizes,
+                    "indices": stats,
                 }
             ),
             200,

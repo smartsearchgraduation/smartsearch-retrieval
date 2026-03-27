@@ -9,7 +9,7 @@ import os
 import tempfile
 import pytest
 
-from vector_db.faiss_manager import FAISSManager, IndexType
+from vector_db.faiss_manager import FAISSManager, IndexType, sanitize_model_name, make_folder_name
 
 
 # ---------------------------------------------------------------------------
@@ -222,3 +222,48 @@ class TestFAISSManagerClear:
         mgr.clear()
         sizes = mgr.get_all_sizes()
         assert all(v == 0 for v in sizes.values())
+
+
+# ---------------------------------------------------------------------------
+# has_product
+# ---------------------------------------------------------------------------
+
+class TestFAISSManagerHasProduct:
+
+    def test_has_product_true(self):
+        mgr = FAISSManager(dimension=512)
+        mgr.add_to_textual(_dummy_embedding(), "prod_001", "ViT-B/32")
+        assert mgr.has_product(IndexType.TEXTUAL, "prod_001") is True
+
+    def test_has_product_false(self):
+        mgr = FAISSManager(dimension=512)
+        assert mgr.has_product(IndexType.TEXTUAL, "prod_001") is False
+
+    def test_has_product_after_remove(self):
+        mgr = FAISSManager(dimension=512)
+        mgr.add_to_textual(_dummy_embedding(), "prod_001", "ViT-B/32")
+        mgr.remove_by_product_id(IndexType.TEXTUAL, "prod_001")
+        assert mgr.has_product(IndexType.TEXTUAL, "prod_001") is False
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+class TestHelperFunctions:
+
+    def test_sanitize_bge(self):
+        assert sanitize_model_name("BAAI/bge-large-en-v1.5") == "bge-large-en-v1.5"
+
+    def test_sanitize_qwen(self):
+        assert sanitize_model_name("Qwen/Qwen3-Embedding-8B") == "Qwen3-Embedding-8B"
+
+    def test_sanitize_clip(self):
+        assert sanitize_model_name("ViT-B/32") == "ViT-B-32"
+
+    def test_sanitize_no_slash(self):
+        assert sanitize_model_name("my-model") == "my-model"
+
+    def test_make_folder_name(self):
+        assert make_folder_name("BAAI/bge-large-en-v1.5", 1024) == "bge-large-en-v1.5_1024_embeddings"
+        assert make_folder_name("ViT-B/32", 512) == "ViT-B-32_512_embeddings"

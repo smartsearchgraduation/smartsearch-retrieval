@@ -1,10 +1,11 @@
 """
 FAISS Manager
 Manages FAISS indices for textual, visual, and fused embeddings.
-Supports metadata storage alongside vectors for e-commerce product retrieval.
+Each model gets its own storage folder: <model_name>_<dimension>_embeddings/
 """
 
 import os
+import re
 import json
 import numpy as np
 import faiss
@@ -21,9 +22,28 @@ class IndexType(Enum):
     FUSED = "fused"
 
 
+def sanitize_model_name(model_name: str) -> str:
+    """Extract short model name and sanitize for folder use.
+
+    'BAAI/bge-large-en-v1.5' -> 'bge-large-en-v1.5'
+    'Qwen/Qwen3-Embedding-8B' -> 'Qwen3-Embedding-8B'
+    'ViT-B/32' -> 'ViT-B-32'
+    """
+    if re.match(r'^[A-Za-z]+-[A-Za-z]/\d+', model_name):
+        return model_name.replace("/", "-")
+    if "/" in model_name:
+        return model_name.split("/")[-1]
+    return model_name
+
+
+def make_folder_name(model_name: str, dimension: int) -> str:
+    """Build folder name: <sanitized_model_name>_<dimension>_embeddings"""
+    return f"{sanitize_model_name(model_name)}_{dimension}_embeddings"
+
+
 class FAISSManager:
     """
-    Manager class for FAISS vector indices.
+    Manager class for FAISS vector indices scoped to a single model folder.
     Handles three separate indices: Textual, Visual, and Fused.
     Each index stores embeddings with associated metadata.
     """
@@ -119,6 +139,14 @@ class FAISSManager:
         current_id = self.id_counters[index_type]
         self.id_counters[index_type] += 1
         return current_id
+
+    def has_product(self, index_type: IndexType, product_id: str) -> bool:
+        """Check if a product already has embeddings in the given index."""
+        with self._lock:
+            for meta in self.metadata[index_type]:
+                if meta.get("product_id") == product_id:
+                    return True
+            return False
 
     def add_to_textual(
         self,
@@ -490,37 +518,3 @@ class FAISSManager:
         print(
             f"[FAISSManager] Cleared {'all indices' if index_type is None else index_type.value + ' index'}"
         )
-
-
-# Example usage and testing
-if __name__ == "__main__":
-    # Initialize manager
-    manager = FAISSManager(dimension=512)
-
-    # Test adding vectors
-    dummy_embedding = [0.1] * 512
-
-    # Add to textual index
-    text_id = manager.add_to_textual(
-        embedding=dummy_embedding,
-        product_id="prod_001",
-        model_name="ViT-B/32",
-    )
-    print(f"Added to textual index with ID: {text_id}")
-
-    # Add to visual index
-    visual_id = manager.add_to_visual(
-        embedding=dummy_embedding,
-        product_id="prod_001",
-        image_no=0,
-        model_name="ViT-B/32",
-    )
-    print(f"Added to visual index with ID: {visual_id}")
-
-    # Check sizes
-    sizes = manager.get_all_sizes()
-    print(f"Index sizes: {sizes}")
-
-    # Search
-    results = manager.search_textual(dummy_embedding, top_k=5)
-    print(f"Search results: {results}")

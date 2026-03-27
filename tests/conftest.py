@@ -34,7 +34,7 @@ def app():
             "dimension": 512,
             "top_k": 10,
             "max_top_k": 100,
-            "index_path": "./data/faiss_indices",
+            "data_base_path": "./data",
             "host": "0.0.0.0",
             "port": 5002,
         },
@@ -47,7 +47,7 @@ def app():
         svc._config = fake_config
         svc.MODEL_REGISTRY = fake_config["models"]
         svc.DEFAULT_DIMENSION = 512
-        svc.INDEX_PATH = "./data/faiss_indices"
+        svc.DATA_BASE_PATH = "./data"
         svc.HOST = "0.0.0.0"
         svc.PORT = 5002
         svc.MAX_TOP_K = 100
@@ -72,7 +72,7 @@ def app():
         yield flask_app
 
     # Reset global managers after each test
-    svc._faiss_manager = None
+    svc._faiss_managers.clear()
     svc._textual_managers.clear()
     svc._visual_managers.clear()
     svc._fused_managers.clear()

@@ -19,7 +19,9 @@ smartsearch-retrieval/
 ├── config.json                     # Model registry and application defaults
 ├── requirements.txt                # Python dependencies
 ├── data/                           # Data storage directory
-│   └── faiss_indices/              # Persistent FAISS index storage
+│   ├── bge-large-en-v1.5_1024_embeddings/   # BGE model indices
+│   ├── ViT-B-32_512_embeddings/             # CLIP model indices
+│   └── Qwen3-Embedding-8B_4096_embeddings/  # Qwen model indices
 ├── routes/
 │   ├── __init__.py
 │   ├── product_routes.py           # Add, update, delete product endpoints
@@ -211,6 +213,8 @@ POST /api/retrieval/search/late
 
 ### Add Product
 
+Adds a product to the retrieval system. If the product already has embeddings for the active model, the request is skipped and a success response with `"skipped": true` is returned.
+
 ```http
 POST /api/retrieval/add-product
 ```
@@ -230,7 +234,7 @@ POST /api/retrieval/add-product
 }
 ```
 
-**Response:**
+**Response (new product):**
 ```json
 {
     "status": "success",
@@ -244,13 +248,25 @@ POST /api/retrieval/add-product
 }
 ```
 
+**Response (already exists for active model):**
+```json
+{
+    "status": "success",
+    "message": "Product product_001 already has embeddings for this model, skipping",
+    "details": {
+        "product_id": "product_001",
+        "skipped": true
+    }
+}
+```
+
 ### Update Product
 
 ```http
 PUT /api/retrieval/update-product/<product_id>
 ```
 
-Atomically removes old embeddings and re-indexes with new data.
+Removes old embeddings from **all** model folders, then re-indexes with the active model.
 
 **Request Body:**
 ```json
@@ -273,7 +289,10 @@ Atomically removes old embeddings and re-indexes with new data.
     "message": "Product product_001 updated successfully",
     "details": {
         "product_id": "product_001",
-        "removed_counts": { "textual": 1, "visual": 2, "fused": 0 },
+        "removed_counts": {
+            "bge-large-en-v1.5_1024_embeddings": { "textual": 1, "visual": 0, "fused": 0 },
+            "ViT-B-32_512_embeddings": { "textual": 0, "visual": 2, "fused": 0 }
+        },
         "textual_vector_id": 2,
         "visual_vector_ids": [3],
         "images_processed": 1
@@ -287,7 +306,7 @@ Atomically removes old embeddings and re-indexes with new data.
 DELETE /api/retrieval/delete-product/<product_id>
 ```
 
-Removes all embeddings for a product from all FAISS indices.
+Removes all embeddings for a product from **all** model folders.
 
 **Response:**
 ```json
@@ -296,7 +315,10 @@ Removes all embeddings for a product from all FAISS indices.
     "message": "Product product_001 deleted successfully",
     "details": {
         "product_id": "product_001",
-        "removed_counts": { "textual": 1, "visual": 2, "fused": 0 },
+        "removed_counts": {
+            "bge-large-en-v1.5_1024_embeddings": { "textual": 1, "visual": 0, "fused": 0 },
+            "ViT-B-32_512_embeddings": { "textual": 0, "visual": 2, "fused": 0 }
+        },
         "total_removed": 3
     }
 }
@@ -318,6 +340,8 @@ GET /api/health
 
 ### Index Statistics
 
+Returns per-model index statistics.
+
 ```http
 GET /api/retrieval/index-stats
 ```
@@ -327,9 +351,16 @@ GET /api/retrieval/index-stats
 {
     "status": "success",
     "indices": {
-        "textual": 100,
-        "visual": 250,
-        "fused": 0
+        "bge-large-en-v1.5_1024_embeddings": {
+            "textual": 100,
+            "visual": 0,
+            "fused": 0
+        },
+        "ViT-B-32_512_embeddings": {
+            "textual": 0,
+            "visual": 250,
+            "fused": 0
+        }
     }
 }
 ```
@@ -445,7 +476,8 @@ The fused embedder supports three fusion strategies:
 
 - **Image paths must be absolute**: The system requires absolute file paths for all image inputs
 - **Embedding dimension**: Default is 512 (for CLIP ViT-B/32)
-- **Index persistence**: FAISS indices are saved to `./data/faiss_indices/`
+- **Index persistence**: Each model stores its FAISS indices in a separate folder under `./data/` (e.g., `./data/bge-large-en-v1.5_1024_embeddings/`)
+- **Cross-model operations**: Update and delete operations remove product embeddings from all model folders
 - **Thread safety**: The FAISS manager uses thread locks for safe concurrent operations
 
 ## 🤝 Contributing

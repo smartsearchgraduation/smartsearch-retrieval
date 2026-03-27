@@ -21,7 +21,7 @@
         "dimension": 512,
         "top_k": 10,
         "max_top_k": 100,
-        "index_path": "./data/faiss_indices",
+        "data_base_path": "./data",
         "host": "0.0.0.0",
         "port": 5002
     }

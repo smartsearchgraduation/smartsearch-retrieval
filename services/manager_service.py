@@ -3,30 +3,34 @@ Manager Service — centralizes initialization and access to model managers and 
 
 All lazy-initialization logic for TextModelManager, VisualModelManager,
 FusedModelManager, and FAISSManager lives here.
+
+Each model stores its embeddings in a separate folder under DATA_BASE_PATH:
+    <sanitized_model_name>_<dimension>_embeddings/
 """
 
 import json
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from models.textual_models import TextModelManager
 from models.visual_models import VisualModelManager
 from models.fused_models import FusedModelManager
 from vector_db import FAISSManager
+from vector_db.faiss_manager import make_folder_name
 
 
 # Global managers (initialized lazily)
 _textual_managers: Dict[str, TextModelManager] = {}
 _visual_managers: Dict[str, VisualModelManager] = {}
 _fused_managers: Dict[str, FusedModelManager] = {}
-_faiss_manager: Optional[FAISSManager] = None
+_faiss_managers: Dict[str, FAISSManager] = {}
 
 # Configuration (loaded at module import)
 _config = None
 MODEL_REGISTRY = {}
 DEFAULT_MODELS: Dict[str, str] = {}
 DEFAULT_DIMENSION = 512
-INDEX_PATH = "./data/faiss_indices"
+DATA_BASE_PATH = "./data"
 HOST = "0.0.0.0"
 PORT = 5002
 MAX_TOP_K = 100
@@ -35,7 +39,7 @@ DEFAULT_TOP_K = 10
 
 def load_config() -> dict:
     """Load configuration from config.json and initialize module-level variables."""
-    global _config, MODEL_REGISTRY, DEFAULT_MODELS, DEFAULT_DIMENSION, INDEX_PATH
+    global _config, MODEL_REGISTRY, DEFAULT_MODELS, DEFAULT_DIMENSION, DATA_BASE_PATH
     global HOST, PORT, MAX_TOP_K, DEFAULT_TOP_K
 
     config_path = os.path.join(
@@ -53,7 +57,7 @@ def load_config() -> dict:
     DEFAULT_MODELS = _config.get("default_models", {})
     defaults = _config.get("defaults", {})
     DEFAULT_DIMENSION = defaults.get("dimension", 512)
-    INDEX_PATH = defaults.get("index_path", "./data/faiss_indices")
+    DATA_BASE_PATH = defaults.get("data_base_path", "./data")
     HOST = defaults.get("host", "0.0.0.0")
     PORT = defaults.get("port", 5002)
     MAX_TOP_K = defaults.get("max_top_k", 100)
@@ -62,46 +66,97 @@ def load_config() -> dict:
     return _config
 
 
+def _get_model_dimension(model_name: str) -> int:
+    """Get dimension for a model from registry."""
+    return MODEL_REGISTRY.get(model_name, {}).get("dimension", DEFAULT_DIMENSION)
+
+
 def get_faiss_manager(
     textual_model_name: str = None,
     visual_model_name: str = None,
     fused_model_name: str = None,
 ) -> FAISSManager:
     """
-    Get or initialize the FAISS manager.
+    Get or create a FAISSManager for the given model combination.
 
-    Dimensions are determined from the MODEL_REGISTRY based on the provided model names.
-    The first call with model names sets the dimensions for each index type.
+    Each unique model gets its own folder under DATA_BASE_PATH.
+    The folder is named: <sanitized_model_name>_<dimension>_embeddings/
+
+    For textual-only or visual-only models, a single model determines the folder.
+    For CLIP (shared text+image), one folder holds both textual and visual indices.
     """
-    global _faiss_manager
-    if _faiss_manager is None:
-        # Get dimensions from MODEL_REGISTRY based on provided model names
-        textual_dim = (
-            MODEL_REGISTRY.get(textual_model_name, {}).get("dimension", DEFAULT_DIMENSION)
-            if textual_model_name
-            else DEFAULT_DIMENSION
-        )
-        visual_dim = (
-            MODEL_REGISTRY.get(visual_model_name, {}).get("dimension", DEFAULT_DIMENSION)
-            if visual_model_name
-            else DEFAULT_DIMENSION
-        )
-        fused_dim = (
-            MODEL_REGISTRY.get(fused_model_name, {}).get("dimension", DEFAULT_DIMENSION)
-            if fused_model_name
-            else DEFAULT_DIMENSION
-        )
+    # Determine the primary model name for the folder
+    model_name = textual_model_name or visual_model_name or fused_model_name
+    if model_name is None:
+        # Fallback: return the first cached manager or create with defaults
+        if _faiss_managers:
+            return next(iter(_faiss_managers.values()))
+        model_name = DEFAULT_MODELS.get("textual", "")
 
-        _faiss_manager = FAISSManager(
-            dimension=DEFAULT_DIMENSION,
-            index_path=INDEX_PATH,
+    dimension = _get_model_dimension(model_name)
+    folder_name = make_folder_name(model_name, dimension)
+
+    if folder_name not in _faiss_managers:
+        index_path = os.path.join(DATA_BASE_PATH, folder_name)
+        _faiss_managers[folder_name] = FAISSManager(
+            dimension=dimension,
+            index_path=index_path,
             dimensions={
-                "textual": textual_dim,
-                "visual": visual_dim,
-                "fused": fused_dim,
+                "textual": _get_model_dimension(textual_model_name) if textual_model_name else dimension,
+                "visual": _get_model_dimension(visual_model_name) if visual_model_name else dimension,
+                "fused": _get_model_dimension(fused_model_name) if fused_model_name else dimension,
             },
         )
-    return _faiss_manager
+    return _faiss_managers[folder_name]
+
+
+def get_all_faiss_managers() -> Dict[str, FAISSManager]:
+    """Return all currently loaded FAISSManagers (keyed by folder name)."""
+    return _faiss_managers
+
+
+def discover_model_folders() -> List[str]:
+    """Scan DATA_BASE_PATH for existing model embedding folders."""
+    if not os.path.exists(DATA_BASE_PATH):
+        return []
+    return [
+        d for d in os.listdir(DATA_BASE_PATH)
+        if os.path.isdir(os.path.join(DATA_BASE_PATH, d))
+        and d.endswith("_embeddings")
+    ]
+
+
+def get_or_load_all_faiss_managers() -> Dict[str, FAISSManager]:
+    """Ensure all on-disk model folders have a loaded FAISSManager."""
+    for folder_name in discover_model_folders():
+        if folder_name not in _faiss_managers:
+            index_path = os.path.join(DATA_BASE_PATH, folder_name)
+            # Parse dimension from folder name: <name>_<dim>_embeddings
+            parts = folder_name.rsplit("_", 2)
+            try:
+                dim = int(parts[-2])
+            except (IndexError, ValueError):
+                dim = DEFAULT_DIMENSION
+            _faiss_managers[folder_name] = FAISSManager(
+                dimension=dim,
+                index_path=index_path,
+            )
+    return _faiss_managers
+
+
+def remove_product_from_all_models(product_id: str) -> Dict[str, Dict[str, int]]:
+    """Remove a product's embeddings from ALL model folders.
+
+    Returns dict of {folder_name: {index_type: removed_count}}.
+    """
+    all_managers = get_or_load_all_faiss_managers()
+    all_removed = {}
+    for folder_name, manager in all_managers.items():
+        removed = manager.remove_product_from_all(product_id)
+        if sum(removed.values()) > 0:
+            manager.save()
+            all_removed[folder_name] = removed
+    return all_removed
 
 
 def get_textual_manager(model_name: str) -> TextModelManager:
@@ -164,6 +219,15 @@ def combine_product_text(
     if price:
         parts.append(f"Price: {price}")
     return " ".join(parts)
+
+
+def get_all_index_stats() -> Dict[str, Dict[str, int]]:
+    """Return per-model-folder index stats."""
+    all_managers = get_or_load_all_faiss_managers()
+    stats = {}
+    for folder_name, manager in all_managers.items():
+        stats[folder_name] = manager.get_all_sizes()
+    return stats
 
 
 def get_available_models() -> dict:
