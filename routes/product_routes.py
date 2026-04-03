@@ -8,6 +8,7 @@ from flask import Blueprint, request, jsonify
 
 from services.manager_service import (
     get_faiss_manager,
+    get_fused_manager,
     get_textual_manager,
     get_visual_manager,
     combine_product_text,
@@ -40,7 +41,7 @@ def add_product():
         "images": ["C:/path/to/image1.jpg", "C:/path/to/image2.jpg"],
         "textual_model_name": "ViT-B/32",
         "visual_model_name": "ViT-B/32",
-        "fused_model_name": "ViT-B/32"  # Optional, not used for now
+        "fused_model_name": "ViT-B/32"  // Optional, enables early fusion indexing (CLIP only)
     }
 
     Response:
@@ -69,7 +70,7 @@ def add_product():
         images = data.get("images", [])
         textual_model_name = data["textual_model_name"]
         visual_model_name = data["visual_model_name"]
-        # fused_model_name = data.get("fused_model_name")  # Not used for now
+        fused_model_name = data.get("fused_model_name")
 
         # Get separate FAISS managers per model
         textual_faiss = get_faiss_manager(textual_model_name)
@@ -140,20 +141,63 @@ def add_product():
                     400,
                 )
 
+        # Process fused embeddings (early fusion indexing) if fused_model_name provided
+        fused_vector_ids = []
+        if fused_model_name and images:
+            fused_faiss = get_faiss_manager(fused_model_name)
+            fused_mgr = get_fused_manager(fused_model_name)
+
+            for image_no, image_path in enumerate(images):
+                try:
+                    fused_embedding = fused_mgr.get_embedding(combined_text, image_path)
+                    fused_vector_id = fused_faiss.add_to_fused(
+                        embedding=fused_embedding,
+                        product_id=product_id,
+                        image_no=image_no,
+                        model_name=fused_model_name,
+                    )
+                    fused_vector_ids.append(fused_vector_id)
+                except FileNotFoundError:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": f"Image not found: {image_path}",
+                            }
+                        ),
+                        400,
+                    )
+                except ValueError as e:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": str(e),
+                            }
+                        ),
+                        400,
+                    )
+            fused_faiss.save()
+
         textual_faiss.save()
         if visual_faiss is not textual_faiss:
             visual_faiss.save()
+
+        details = {
+            "product_id": product_id,
+            "textual_vector_id": textual_vector_id,
+            "visual_vector_ids": visual_vector_ids,
+            "images_processed": len(visual_vector_ids),
+        }
+        if fused_vector_ids:
+            details["fused_vector_ids"] = fused_vector_ids
+
         return (
             jsonify(
                 {
                     "status": "success",
                     "message": f"Product {product_id} added successfully",
-                    "details": {
-                        "product_id": product_id,
-                        "textual_vector_id": textual_vector_id,
-                        "visual_vector_ids": visual_vector_ids,
-                        "images_processed": len(visual_vector_ids),
-                    },
+                    "details": details,
                 }
             ),
             201,
@@ -274,7 +318,8 @@ def update_product(product_id: str):
         "price": 149.99,
         "images": ["C:/path/to/new_image.jpg"],
         "textual_model_name": "ViT-B/32",
-        "visual_model_name": "ViT-B/32"
+        "visual_model_name": "ViT-B/32",
+        "fused_model_name": "ViT-B/32"  // Optional, enables early fusion indexing (CLIP only)
     }
 
     Response:
@@ -319,6 +364,7 @@ def update_product(product_id: str):
         images = data.get("images", [])
         textual_model_name = data["textual_model_name"]
         visual_model_name = data["visual_model_name"]
+        fused_model_name = data.get("fused_model_name")
 
         # Step 1: Remove old embeddings from ALL model folders
         all_removed = remove_product_from_all_models(product_id)
@@ -374,23 +420,65 @@ def update_product(product_id: str):
                     400,
                 )
 
-        # Step 4: Save indices
+        # Step 4: Generate and add fused embeddings if fused_model_name provided
+        fused_vector_ids = []
+        if fused_model_name and images:
+            fused_faiss = get_faiss_manager(fused_model_name)
+            fused_mgr = get_fused_manager(fused_model_name)
+
+            for image_no, image_path in enumerate(images):
+                try:
+                    fused_embedding = fused_mgr.get_embedding(combined_text, image_path)
+                    fused_vector_id = fused_faiss.add_to_fused(
+                        embedding=fused_embedding,
+                        product_id=product_id,
+                        image_no=image_no,
+                        model_name=fused_model_name,
+                    )
+                    fused_vector_ids.append(fused_vector_id)
+                except FileNotFoundError:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": f"Image not found: {image_path}",
+                            }
+                        ),
+                        400,
+                    )
+                except ValueError as e:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": str(e),
+                            }
+                        ),
+                        400,
+                    )
+            fused_faiss.save()
+
+        # Step 5: Save indices
         textual_faiss.save()
         if visual_faiss is not textual_faiss:
             visual_faiss.save()
+
+        details = {
+            "product_id": product_id,
+            "removed_counts": all_removed,
+            "textual_vector_id": textual_vector_id,
+            "visual_vector_ids": visual_vector_ids,
+            "images_processed": len(visual_vector_ids),
+        }
+        if fused_vector_ids:
+            details["fused_vector_ids"] = fused_vector_ids
 
         return (
             jsonify(
                 {
                     "status": "success",
                     "message": f"Product {product_id} updated successfully",
-                    "details": {
-                        "product_id": product_id,
-                        "removed_counts": all_removed,
-                        "textual_vector_id": textual_vector_id,
-                        "visual_vector_ids": visual_vector_ids,
-                        "images_processed": len(visual_vector_ids),
-                    },
+                    "details": details,
                 }
             ),
             200,

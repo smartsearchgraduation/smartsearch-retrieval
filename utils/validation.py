@@ -109,6 +109,30 @@ def deduplicate_visual_results(
     return product_scores
 
 
+def deduplicate_fused_results(
+    search_results: List[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Keep best fused score and its image number per product."""
+    product_scores: Dict[str, Dict[str, Any]] = {}
+    for result in search_results:
+        product_id = result["product_id"]
+        score = result["score"]
+        image_no = result.get("image_no", 0)
+
+        if product_id not in product_scores:
+            product_scores[product_id] = {
+                "score": score,
+                "image_no": image_no,
+            }
+        else:
+            if score > product_scores[product_id]["score"]:
+                product_scores[product_id] = {
+                    "score": score,
+                    "image_no": image_no,
+                }
+    return product_scores
+
+
 def validate_text_length(text: str, max_length: int = MAX_TEXT_LENGTH):
     """Validate text payload size to prevent overly large inputs."""
     if not isinstance(text, str):

@@ -1,5 +1,5 @@
 """
-Search Routes — text search, image search, late fusion search endpoints.
+Search Routes — text search, image search, late fusion search, early fusion search endpoints.
 """
 
 from typing import Dict, Any
@@ -9,10 +9,12 @@ from flask import Blueprint, request, jsonify
 
 from services.manager_service import (
     get_faiss_manager,
+    get_fused_manager,
     get_textual_manager,
     get_visual_manager,
 )
 from utils.validation import (
+    deduplicate_fused_results,
     deduplicate_text_results,
     deduplicate_visual_results,
     validate_image_file_size,
@@ -132,13 +134,14 @@ def late_fusion_search():
         visual_scores = deduplicate_visual_results(visual_results)
 
         # Combine results using late fusion
-        # Get all unique product IDs from both indices
-        all_product_ids = set(text_scores.keys()) | set(visual_scores.keys())
+        # Only combine products that appear in BOTH modality results
+        # to avoid unfairly penalizing strong single-modality matches with a 0.0 score
+        all_product_ids = set(text_scores.keys()) & set(visual_scores.keys())
 
         combined_results = []
         for product_id in all_product_ids:
-            t_score = text_scores.get(product_id, 0.0)
-            v_data = visual_scores.get(product_id, {"score": 0.0, "image_no": -1})
+            t_score = text_scores[product_id]
+            v_data = visual_scores[product_id]
             v_score = v_data["score"]
             best_image_no = v_data["image_no"]
 
@@ -394,6 +397,154 @@ def image_search():
                     "meta": {
                         "total_results": len(results),
                         "model_name": visual_model_name,
+                    },
+                }
+            ),
+            200,
+        )
+
+    except FileNotFoundError as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": f"Image not found: {str(e)}",
+                }
+            ),
+            400,
+        )
+    except ValueError as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            400,
+        )
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@search_bp.route("/api/retrieval/search/early", methods=["POST"])
+def early_fusion_search():
+    """
+    Early fusion search using a fused text+image query embedding.
+
+    Fuses the text and image query into a single embedding using CLIP's
+    shared embedding space (weighted average fusion), then searches the
+    Fused index.
+
+    Requires that products were indexed with fused embeddings
+    (fused_model_name provided during add-product).
+
+    Request JSON:
+    {
+        "text": "search query text",
+        "image": "C:/path/to/query/image.jpg",
+        "fused_model_name": "ViT-B/32",
+        "text_weight": 0.5,
+        "top_k": 10  // optional, default 10
+    }
+
+    Response:
+    {
+        "status": "success",
+        "results": [
+            {
+                "product_id": "prod_001",
+                "score": 0.85,
+                "best_image_no": 0
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        error = validate_required_fields(
+            data, ["text", "image", "fused_model_name"]
+        )
+        if error:
+            return error
+
+        text = data["text"]
+        image_path = data["image"]
+        fused_model_name = data["fused_model_name"]
+        text_weight = float(data.get("text_weight", 0.5))
+        top_k = validate_top_k(data)
+
+        validate_text_length(text)
+        validate_image_file_size(image_path)
+
+        # Validate text_weight
+        if not 0 <= text_weight <= 1:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "text_weight must be between 0 and 1",
+                    }
+                ),
+                400,
+            )
+
+        # Get managers
+        faiss_manager = get_faiss_manager(fused_model_name)
+        fused_manager = get_fused_manager(fused_model_name)
+
+        # Set fusion weights (average fusion with configurable text_weight)
+        fused_manager.set_fusion_method("weighted", text_weight=text_weight)
+
+        # Generate fused query embedding
+        fused_embedding = fused_manager.get_embedding(text, image_path)
+
+        # Search fused index
+        search_results = faiss_manager.search_fused(
+            query_embedding=fused_embedding,
+            top_k=top_k * 2,  # Get more for deduplication
+            model_name=fused_model_name,
+        )
+
+        # Deduplicate: keep best score and image_no per product
+        product_scores = deduplicate_fused_results(search_results)
+
+        # Build results list
+        results = [
+            {
+                "product_id": product_id,
+                "score": round(scores["score"], 6),
+                "best_image_no": scores["image_no"],
+            }
+            for product_id, scores in product_scores.items()
+        ]
+
+        # Sort by score (descending)
+        results.sort(key=lambda x: x["score"], reverse=True)
+
+        # Return top_k results
+        results = results[:top_k]
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "results": results,
+                    "meta": {
+                        "total_results": len(results),
+                        "model_name": fused_model_name,
+                        "text_weight": text_weight,
                     },
                 }
             ),

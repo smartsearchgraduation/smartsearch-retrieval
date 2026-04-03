@@ -7,6 +7,7 @@ An E-Commerce Product Retrieval System built with Flask and OpenAI's CLIP model.
 - **Text-based Search**: Search products using natural language queries
 - **Image-based Search**: Find similar products using image queries
 - **Late Fusion Search**: Combine text and image searches with weighted scoring
+- **Early Fusion Search**: Fuse text+image into a single query embedding using CLIP's shared space
 - **Multi-modal Embeddings**: Generate embeddings for text, images, or fused text+image
 - **FAISS Vector Database**: Fast similarity search with persistent storage
 - **RESTful API**: Easy-to-use Flask-based API endpoints
@@ -25,7 +26,7 @@ smartsearch-retrieval/
 ├── routes/
 │   ├── __init__.py
 │   ├── product_routes.py           # Add, update, delete product endpoints
-│   ├── search_routes.py            # Text, image, late fusion search endpoints
+│   ├── search_routes.py            # Text, image, late fusion, early fusion search endpoints
 │   └── system_routes.py            # Health check, index stats, models endpoints
 ├── services/
 │   ├── __init__.py
@@ -211,6 +212,44 @@ POST /api/retrieval/search/late
 }
 ```
 
+### Early Fusion Search
+
+Fuses text and image into a single query embedding using CLIP's shared embedding space, then searches the Fused index. Requires products to be indexed with `fused_model_name` during add-product. Only CLIP models are supported for early fusion since both modalities must share the same embedding space.
+
+```http
+POST /api/retrieval/search/early
+```
+
+**Request Body:**
+```json
+{
+    "text": "red leather handbag",
+    "image": "C:/absolute/path/to/query_image.jpg",
+    "fused_model_name": "ViT-B/32",
+    "text_weight": 0.5,
+    "top_k": 10
+}
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "results": [
+        {
+            "product_id": "product_001",
+            "score": 0.842156,
+            "best_image_no": 0
+        }
+    ],
+    "meta": {
+        "total_results": 1,
+        "model_name": "ViT-B/32",
+        "text_weight": 0.5
+    }
+}
+```
+
 ### Add Product
 
 Adds a product to the retrieval system. If the product already has embeddings for the active model, the request is skipped and a success response with `"skipped": true` is returned.
@@ -230,7 +269,8 @@ POST /api/retrieval/add-product
     "price": 299.99,
     "images": ["C:/absolute/path/to/image1.jpg", "C:/absolute/path/to/image2.jpg"],
     "textual_model_name": "ViT-B/32",
-    "visual_model_name": "ViT-B/32"
+    "visual_model_name": "ViT-B/32",
+    "fused_model_name": "ViT-B/32"
 }
 ```
 
