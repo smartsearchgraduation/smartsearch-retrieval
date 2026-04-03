@@ -110,9 +110,9 @@ def discover_model_folders() -> List[str]:
     if not os.path.exists(DATA_BASE_PATH):
         return []
     return [
-        d for d in os.listdir(DATA_BASE_PATH)
-        if os.path.isdir(os.path.join(DATA_BASE_PATH, d))
-        and d.endswith("_embeddings")
+        d
+        for d in os.listdir(DATA_BASE_PATH)
+        if os.path.isdir(os.path.join(DATA_BASE_PATH, d)) and d.endswith("_embeddings")
     ]
 
 

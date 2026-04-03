@@ -212,7 +212,7 @@ class TextModelManager:
                 text_parts.append(product["tags"])
 
         combined_text = " ".join(text_parts)
-        return self.get_embedding(combined_text)
+        return self.get_document_embedding(combined_text)
 
     def embed_products(self, products: List[Dict[str, str]]) -> List[List[float]]:
         """

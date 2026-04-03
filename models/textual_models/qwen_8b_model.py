@@ -86,18 +86,14 @@ class Qwen8BEmbedder(Embeddings):
             # Get model output
             model_output = self.model(**encoded_input)
 
-            # Use last token embedding for Qwen embedding models (similar to decoder models)
-            # Or use mean pooling over all tokens
+            # Use last token embedding for Qwen embedding models (decoder-based)
             last_hidden_state = model_output.last_hidden_state
             attention_mask = encoded_input["attention_mask"]
 
-            # Mean pooling
-            input_mask_expanded = (
-                attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-            )
-            sum_embeddings = torch.sum(last_hidden_state * input_mask_expanded, dim=1)
-            sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
-            embedding = sum_embeddings / sum_mask
+            # Last-token pooling: find the position of the last real token per sequence
+            sequence_lengths = attention_mask.sum(dim=1) - 1  # 0-indexed
+            batch_indices = torch.arange(last_hidden_state.size(0), device=self.device)
+            embedding = last_hidden_state[batch_indices, sequence_lengths]
 
             # Normalize the embedding
             embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)

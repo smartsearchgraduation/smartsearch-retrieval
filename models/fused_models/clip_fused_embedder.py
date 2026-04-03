@@ -177,6 +177,8 @@ class CLIPFusedEmbedder:
 
         elif self.fusion_method == "concat":
             # Concatenation (doubles the dimension)
+            # WARNING: This changes the embedding dimension (e.g. 512 -> 1024),
+            # so the FAISS index must be created with the doubled dimension.
             fused = np.concatenate([text_embedding, image_embedding])
 
         else:
@@ -185,9 +187,10 @@ class CLIPFusedEmbedder:
                 f"Available methods: 'average', 'weighted', 'concat'"
             )
 
-        # Normalize the fused embedding (except for concat which may have different semantics)
-        if self.fusion_method != "concat":
-            fused = fused / np.linalg.norm(fused)
+        # Normalize the fused embedding to unit length for cosine similarity
+        norm = np.linalg.norm(fused)
+        if norm > 0:
+            fused = fused / norm
 
         return fused
 
