@@ -8,6 +8,7 @@ An E-Commerce Product Retrieval System built with Flask and OpenAI's CLIP model.
 - **Image-based Search**: Find similar products using image queries
 - **Late Fusion Search**: Combine text and image searches with weighted scoring
 - **Early Fusion Search**: Fuse text+image into a single query embedding using CLIP's shared space
+- **Cross-Modal Search**: Search images with text or text with images using CLIP's shared embedding space
 - **Multi-modal Embeddings**: Generate embeddings for text, images, or fused text+image
 - **FAISS Vector Database**: Fast similarity search with persistent storage
 - **RESTful API**: Easy-to-use Flask-based API endpoints
@@ -26,7 +27,7 @@ smartsearch-retrieval/
 ├── routes/
 │   ├── __init__.py
 │   ├── product_routes.py           # Add, update, delete product endpoints
-│   ├── search_routes.py            # Text, image, late fusion, early fusion search endpoints
+│   ├── search_routes.py            # Text, image, late/early fusion, cross-modal search endpoints
 │   └── system_routes.py            # Health check, index stats, models endpoints
 ├── services/
 │   ├── __init__.py
@@ -246,6 +247,75 @@ POST /api/retrieval/search/early
         "total_results": 1,
         "model_name": "ViT-B/32",
         "text_weight": 0.5
+    }
+}
+```
+
+### Image Search by Text (Cross-Modal)
+
+Find product images using a text query. Encodes the text with CLIP's text encoder and searches the Visual index. Only CLIP models are supported since both modalities must share the same embedding space.
+
+```http
+POST /api/retrieval/search/image-by-text
+```
+
+**Request Body:**
+```json
+{
+    "text": "red leather handbag",
+    "visual_model_name": "ViT-B/32",
+    "top_k": 10
+}
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "results": [
+        {
+            "product_id": "product_001",
+            "score": 0.827880,
+            "best_image_no": 0
+        }
+    ],
+    "meta": {
+        "total_results": 1,
+        "model_name": "ViT-B/32"
+    }
+}
+```
+
+### Text Search by Image (Cross-Modal)
+
+Find product text descriptions using an image query. Encodes the image with CLIP's image encoder and searches the Textual index. Only CLIP models are supported, and the textual index must have been built with the same CLIP model.
+
+```http
+POST /api/retrieval/search/text-by-image
+```
+
+**Request Body:**
+```json
+{
+    "image": "C:/absolute/path/to/query_image.jpg",
+    "textual_model_name": "ViT-B/32",
+    "top_k": 10
+}
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "results": [
+        {
+            "product_id": "product_001",
+            "score": 0.812345
+        }
+    ],
+    "meta": {
+        "total_results": 1,
+        "model_name": "ViT-B/32"
     }
 }
 ```

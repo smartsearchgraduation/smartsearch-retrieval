@@ -1,5 +1,6 @@
 """
-Search Routes — text search, image search, late fusion search, early fusion search endpoints.
+Search Routes — text search, image search, late fusion search, early fusion search,
+               cross-modal search (image-by-text, text-by-image) endpoints.
 """
 
 from typing import Dict, Any
@@ -17,6 +18,7 @@ from utils.validation import (
     deduplicate_fused_results,
     deduplicate_text_results,
     deduplicate_visual_results,
+    validate_clip_model,
     validate_image_file_size,
     validate_required_fields,
     validate_text_length,
@@ -545,6 +547,241 @@ def early_fusion_search():
                         "total_results": len(results),
                         "model_name": fused_model_name,
                         "text_weight": text_weight,
+                    },
+                }
+            ),
+            200,
+        )
+
+    except FileNotFoundError as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": f"Image not found: {str(e)}",
+                }
+            ),
+            400,
+        )
+    except ValueError as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            400,
+        )
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@search_bp.route("/api/retrieval/search/image-by-text", methods=["POST"])
+def image_by_text_search():
+    """
+    Cross-modal search: find product images using a text query.
+
+    Encodes the text query with CLIP's text encoder, then searches the
+    Visual FAISS index. Works because CLIP text and image embeddings
+    share the same vector space.
+
+    Only CLIP models are supported (text and image must share the same space).
+
+    Request JSON:
+    {
+        "text": "search query text",
+        "visual_model_name": "ViT-B/32",
+        "top_k": 10  // optional, default 10
+    }
+
+    Response:
+    {
+        "status": "success",
+        "results": [
+            {
+                "product_id": "prod_001",
+                "score": 0.85,
+                "best_image_no": 0
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        error = validate_required_fields(data, ["text", "visual_model_name"])
+        if error:
+            return error
+
+        text = data["text"]
+        visual_model_name = data["visual_model_name"]
+        top_k = validate_top_k(data)
+
+        validate_text_length(text)
+        validate_clip_model(visual_model_name)
+
+        # Encode text with the same CLIP model used for the visual index
+        textual_manager = get_textual_manager(visual_model_name)
+        text_embedding = textual_manager.get_embedding(text)
+
+        # Search the visual index with the text embedding (cross-modal)
+        faiss_manager = get_faiss_manager(visual_model_name)
+        search_results = faiss_manager.search_visual(
+            query_embedding=text_embedding,
+            top_k=top_k * 2,  # Get more for deduplication
+            model_name=visual_model_name,
+        )
+
+        # Deduplicate: keep best score and image_no per product
+        product_scores = deduplicate_visual_results(search_results)
+
+        # Build results list
+        results = [
+            {
+                "product_id": product_id,
+                "score": round(scores["score"], 6),
+                "best_image_no": scores["image_no"],
+            }
+            for product_id, scores in product_scores.items()
+        ]
+
+        # Sort by score (descending)
+        results.sort(key=lambda x: x["score"], reverse=True)
+
+        # Return top_k results
+        results = results[:top_k]
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "results": results,
+                    "meta": {
+                        "total_results": len(results),
+                        "model_name": visual_model_name,
+                    },
+                }
+            ),
+            200,
+        )
+
+    except ValueError as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            400,
+        )
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@search_bp.route("/api/retrieval/search/text-by-image", methods=["POST"])
+def text_by_image_search():
+    """
+    Cross-modal search: find product text descriptions using an image query.
+
+    Encodes the image with CLIP's image encoder, then searches the
+    Textual FAISS index. Works because CLIP text and image embeddings
+    share the same vector space.
+
+    Only CLIP models are supported, and the textual index must have been
+    built with the same CLIP model.
+
+    Request JSON:
+    {
+        "image": "C:/path/to/query/image.jpg",
+        "textual_model_name": "ViT-B/32",
+        "top_k": 10  // optional, default 10
+    }
+
+    Response:
+    {
+        "status": "success",
+        "results": [
+            {
+                "product_id": "prod_001",
+                "score": 0.85
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        error = validate_required_fields(data, ["image", "textual_model_name"])
+        if error:
+            return error
+
+        image_path = data["image"]
+        textual_model_name = data["textual_model_name"]
+        top_k = validate_top_k(data)
+
+        validate_image_file_size(image_path)
+        validate_clip_model(textual_model_name)
+
+        # Encode image with the same CLIP model used for the textual index
+        visual_manager = get_visual_manager(textual_model_name)
+        image_embedding = visual_manager.get_embedding(image_path)
+
+        # Search the textual index with the image embedding (cross-modal)
+        faiss_manager = get_faiss_manager(textual_model_name)
+        search_results = faiss_manager.search_textual(
+            query_embedding=image_embedding,
+            top_k=top_k * 2,  # Get more for deduplication
+            model_name=textual_model_name,
+        )
+
+        # Deduplicate: keep only the best score per product
+        product_scores = deduplicate_text_results(search_results)
+
+        # Build results list
+        results = [
+            {
+                "product_id": product_id,
+                "score": round(score, 6),
+            }
+            for product_id, score in product_scores.items()
+        ]
+
+        # Sort by score (descending)
+        results.sort(key=lambda x: x["score"], reverse=True)
+
+        # Return top_k results
+        results = results[:top_k]
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "results": results,
+                    "meta": {
+                        "total_results": len(results),
+                        "model_name": textual_model_name,
                     },
                 }
             ),

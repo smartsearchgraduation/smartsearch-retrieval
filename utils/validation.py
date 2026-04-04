@@ -133,6 +133,23 @@ def deduplicate_fused_results(
     return product_scores
 
 
+def validate_clip_model(model_name: str):
+    """Raise ValueError if the model is not a CLIP model.
+
+    Cross-modal search requires CLIP because text and image
+    must share the same embedding space.
+    """
+    from services.manager_service import MODEL_REGISTRY
+
+    model_info = MODEL_REGISTRY.get(model_name)
+    if not model_info or model_info["type"] != "clip":
+        model_type = model_info["type"] if model_info else "unknown"
+        raise ValueError(
+            f"Cross-modal search requires a CLIP model. "
+            f"'{model_name}' is type '{model_type}'."
+        )
+
+
 def validate_text_length(text: str, max_length: int = MAX_TEXT_LENGTH):
     """Validate text payload size to prevent overly large inputs."""
     if not isinstance(text, str):
