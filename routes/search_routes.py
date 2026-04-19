@@ -588,18 +588,18 @@ def early_fusion_search():
 @search_bp.route("/api/retrieval/search/image-by-text", methods=["POST"])
 def image_by_text_search():
     """
-    Cross-modal search: find product images using a text query.
+    Cross-modal search: find products using a text query against the fused index.
 
     Encodes the text query with CLIP's text encoder, then searches the
-    Visual FAISS index. Works because CLIP text and image embeddings
-    share the same vector space.
+    Fused FAISS index. Works because CLIP text embeddings and fused
+    embeddings (text+image blend) share the same vector space.
 
-    Only CLIP models are supported (text and image must share the same space).
+    Only CLIP models are supported (fused index is built with CLIP).
 
     Request JSON:
     {
         "text": "search query text",
-        "visual_model_name": "ViT-B/32",
+        "fused_model_name": "ViT-B/32",
         "top_k": 10  // optional, default 10
     }
 
@@ -620,31 +620,31 @@ def image_by_text_search():
         data = request.get_json()
 
         # Validate required fields
-        error = validate_required_fields(data, ["text", "visual_model_name"])
+        error = validate_required_fields(data, ["text", "fused_model_name"])
         if error:
             return error
 
         text = data["text"]
-        visual_model_name = data["visual_model_name"]
+        fused_model_name = data["fused_model_name"]
         top_k = validate_top_k(data)
 
         validate_text_length(text)
-        validate_clip_model(visual_model_name)
+        validate_clip_model(fused_model_name)
 
-        # Encode text with the same CLIP model used for the visual index
-        textual_manager = get_textual_manager(visual_model_name)
+        # Encode text with the same CLIP model used for the fused index
+        textual_manager = get_textual_manager(fused_model_name)
         text_embedding = textual_manager.get_embedding(text)
 
-        # Search the visual index with the text embedding (cross-modal)
-        faiss_manager = get_faiss_manager(visual_model_name)
-        search_results = faiss_manager.search_visual(
+        # Search the fused index with the text embedding (cross-modal)
+        faiss_manager = get_faiss_manager(fused_model_name)
+        search_results = faiss_manager.search_fused(
             query_embedding=text_embedding,
             top_k=top_k * 2,  # Get more for deduplication
-            model_name=visual_model_name,
+            model_name=fused_model_name,
         )
 
         # Deduplicate: keep best score and image_no per product
-        product_scores = deduplicate_visual_results(search_results)
+        product_scores = deduplicate_fused_results(search_results)
 
         # Build results list
         results = [
@@ -669,7 +669,7 @@ def image_by_text_search():
                     "results": results,
                     "meta": {
                         "total_results": len(results),
-                        "model_name": visual_model_name,
+                        "model_name": fused_model_name,
                     },
                 }
             ),
@@ -701,19 +701,18 @@ def image_by_text_search():
 @search_bp.route("/api/retrieval/search/text-by-image", methods=["POST"])
 def text_by_image_search():
     """
-    Cross-modal search: find product text descriptions using an image query.
+    Cross-modal search: find products using an image query against the fused index.
 
     Encodes the image with CLIP's image encoder, then searches the
-    Textual FAISS index. Works because CLIP text and image embeddings
-    share the same vector space.
+    Fused FAISS index. Works because CLIP image embeddings and fused
+    embeddings (text+image blend) share the same vector space.
 
-    Only CLIP models are supported, and the textual index must have been
-    built with the same CLIP model.
+    Only CLIP models are supported (fused index is built with CLIP).
 
     Request JSON:
     {
         "image": "C:/path/to/query/image.jpg",
-        "textual_model_name": "ViT-B/32",
+        "fused_model_name": "ViT-B/32",
         "top_k": 10  // optional, default 10
     }
 
@@ -723,7 +722,8 @@ def text_by_image_search():
         "results": [
             {
                 "product_id": "prod_001",
-                "score": 0.85
+                "score": 0.85,
+                "best_image_no": 0
             },
             ...
         ]
@@ -733,39 +733,40 @@ def text_by_image_search():
         data = request.get_json()
 
         # Validate required fields
-        error = validate_required_fields(data, ["image", "textual_model_name"])
+        error = validate_required_fields(data, ["image", "fused_model_name"])
         if error:
             return error
 
         image_path = data["image"]
-        textual_model_name = data["textual_model_name"]
+        fused_model_name = data["fused_model_name"]
         top_k = validate_top_k(data)
 
         validate_image_file_size(image_path)
-        validate_clip_model(textual_model_name)
+        validate_clip_model(fused_model_name)
 
-        # Encode image with the same CLIP model used for the textual index
-        visual_manager = get_visual_manager(textual_model_name)
+        # Encode image with the same CLIP model used for the fused index
+        visual_manager = get_visual_manager(fused_model_name)
         image_embedding = visual_manager.get_embedding(image_path)
 
-        # Search the textual index with the image embedding (cross-modal)
-        faiss_manager = get_faiss_manager(textual_model_name)
-        search_results = faiss_manager.search_textual(
+        # Search the fused index with the image embedding (cross-modal)
+        faiss_manager = get_faiss_manager(fused_model_name)
+        search_results = faiss_manager.search_fused(
             query_embedding=image_embedding,
             top_k=top_k * 2,  # Get more for deduplication
-            model_name=textual_model_name,
+            model_name=fused_model_name,
         )
 
-        # Deduplicate: keep only the best score per product
-        product_scores = deduplicate_text_results(search_results)
+        # Deduplicate: keep best score and image_no per product
+        product_scores = deduplicate_fused_results(search_results)
 
         # Build results list
         results = [
             {
                 "product_id": product_id,
-                "score": round(score, 6),
+                "score": round(scores["score"], 6),
+                "best_image_no": scores["image_no"],
             }
-            for product_id, score in product_scores.items()
+            for product_id, scores in product_scores.items()
         ]
 
         # Sort by score (descending)
@@ -781,7 +782,7 @@ def text_by_image_search():
                     "results": results,
                     "meta": {
                         "total_results": len(results),
-                        "model_name": textual_model_name,
+                        "model_name": fused_model_name,
                     },
                 }
             ),
