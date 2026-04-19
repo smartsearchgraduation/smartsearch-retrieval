@@ -14,9 +14,7 @@ class VisualModelType(Enum):
     """Enum for available visual model types."""
 
     CLIP = "clip"
-    # Future models can be added here
-    # RESNET = "resnet"
-    # VIT = "vit"
+    MARQO = "marqo"
 
 
 class VisualModelManager:
@@ -66,6 +64,8 @@ class VisualModelManager:
         """Initialize the appropriate visual model based on model_type."""
         if self.model_type == VisualModelType.CLIP:
             self._initialize_clip_model()
+        elif self.model_type == VisualModelType.MARQO:
+            self._initialize_marqo_model()
         else:
             raise NotImplementedError(
                 f"Model type {self.model_type} is not implemented yet."
@@ -80,6 +80,18 @@ class VisualModelManager:
 
         self.model = CLIPImageEmbedder(model_name=model_name, device=device)
         print(f"[VisualModelManager] Initialized CLIP model: {model_name}")
+
+    def _initialize_marqo_model(self):
+        """Initialize Marqo image embedder."""
+        from .marqo_image_embedder import MarqoImageEmbedder
+
+        model_name = self.model_config.get(
+            "model_name", "Marqo/marqo-ecommerce-embeddings-L"
+        )
+        device = self.model_config.get("device", None)
+
+        self.model = MarqoImageEmbedder(model_name=model_name, device=device)
+        print(f"[VisualModelManager] Initialized Marqo model: {model_name}")
 
     def _validate_image_path(self, image_path: str) -> None:
         """

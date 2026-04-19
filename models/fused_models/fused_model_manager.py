@@ -14,9 +14,7 @@ class FusedModelType(Enum):
     """Enum for available fused model types."""
 
     CLIP = "clip"
-    # Future models can be added here
-    # BLIP = "blip"
-    # FLAVA = "flava"
+    MARQO = "marqo"
 
 
 class FusedModelManager:
@@ -71,6 +69,8 @@ class FusedModelManager:
         """Initialize the appropriate fused model based on model_type."""
         if self.model_type == FusedModelType.CLIP:
             self._initialize_clip_model()
+        elif self.model_type == FusedModelType.MARQO:
+            self._initialize_marqo_model()
         else:
             raise NotImplementedError(
                 f"Model type {self.model_type} is not implemented yet."
@@ -92,6 +92,25 @@ class FusedModelManager:
             text_weight=text_weight,
         )
         print(f"[FusedModelManager] Initialized CLIP model: {model_name}")
+
+    def _initialize_marqo_model(self):
+        """Initialize Marqo fused embedder."""
+        from .marqo_fused_embedder import MarqoFusedEmbedder
+
+        model_name = self.model_config.get(
+            "model_name", "Marqo/marqo-ecommerce-embeddings-L"
+        )
+        device = self.model_config.get("device", None)
+        fusion_method = self.model_config.get("fusion_method", "average")
+        text_weight = self.model_config.get("text_weight", 0.5)
+
+        self.model = MarqoFusedEmbedder(
+            model_name=model_name,
+            device=device,
+            fusion_method=fusion_method,
+            text_weight=text_weight,
+        )
+        print(f"[FusedModelManager] Initialized Marqo model: {model_name}")
 
     def _validate_image_path(self, image_path: str) -> None:
         """

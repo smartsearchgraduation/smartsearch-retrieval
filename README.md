@@ -1,6 +1,6 @@
 # SmartSearch Retrieval System
 
-An E-Commerce Product Retrieval System built with Flask and OpenAI's CLIP model. This system enables semantic similarity search for products using textual descriptions, visual images, or a fusion of both modalities.
+An E-Commerce Product Retrieval System built with Flask, supporting multiple embedding models including OpenAI CLIP and Marqo's ecommerce-optimized model. This system enables semantic similarity search for products using textual descriptions, visual images, or a fusion of both modalities.
 
 ## 🚀 Features
 
@@ -37,19 +37,23 @@ smartsearch-retrieval/
 │   └── validation.py               # Request validation helpers
 ├── models/
 │   ├── clip_model_pool.py          # Shared CLIP model pool (avoids duplicate loading)
+│   ├── open_clip_model_pool.py     # Shared OpenCLIP model pool (for Marqo models)
 │   ├── textual_models/
 │   │   ├── __init__.py
 │   │   ├── clip_text_embedder.py   # CLIP text embedding implementation
+│   │   ├── marqo_text_embedder.py  # Marqo text embedding implementation
 │   │   ├── bge_base_embedder.py    # BGE text embedding implementation
 │   │   ├── qwen_8b_model.py        # Qwen text embedding implementation
 │   │   └── text_model_manager.py   # Text model management facade
 │   ├── visual_models/
 │   │   ├── __init__.py
 │   │   ├── clip_image_embedder.py  # CLIP image embedding implementation
+│   │   ├── marqo_image_embedder.py # Marqo image embedding implementation
 │   │   └── visual_model_manager.py # Visual model management facade
 │   └── fused_models/
 │       ├── __init__.py
 │       ├── clip_fused_embedder.py  # CLIP fused embedding implementation
+│       ├── marqo_fused_embedder.py # Marqo fused embedding implementation
 │       └── fused_model_manager.py  # Fused model management facade
 └── vector_db/
     ├── __init__.py
@@ -88,6 +92,7 @@ smartsearch-retrieval/
    ```
 
    > **Note**: The CLIP package is installed from GitHub: `git+https://github.com/openai/CLIP.git`
+   > The Marqo model requires `open_clip_torch` which is included in requirements.txt.
 
 4. **For GPU support** (optional)
    - Replace `faiss-cpu` with `faiss-gpu` in requirements.txt
@@ -215,7 +220,7 @@ POST /api/retrieval/search/late
 
 ### Early Fusion Search
 
-Fuses text and image into a single query embedding using CLIP's shared embedding space, then searches the Fused index. Requires products to be indexed with `fused_model_name` during add-product. Only CLIP models are supported for early fusion since both modalities must share the same embedding space.
+Fuses text and image into a single query embedding using a shared multimodal space, then searches the Fused index. Requires products to be indexed with `fused_model_name` during add-product. Only multimodal models (CLIP, Marqo) are supported since both modalities must share the same embedding space.
 
 ```http
 POST /api/retrieval/search/early
@@ -253,7 +258,7 @@ POST /api/retrieval/search/early
 
 ### Image Search by Text (Cross-Modal)
 
-Find product images using a text query. Encodes the text with CLIP's text encoder and searches the Visual index. Only CLIP models are supported since both modalities must share the same embedding space.
+Find products using a text query against the Fused index. Encodes the text with the multimodal model's text encoder and searches the Fused index. Only multimodal models (CLIP, Marqo) are supported. Requires products to be indexed with `fused_model_name` during add-product.
 
 ```http
 POST /api/retrieval/search/image-by-text
@@ -263,7 +268,7 @@ POST /api/retrieval/search/image-by-text
 ```json
 {
     "text": "red leather handbag",
-    "visual_model_name": "ViT-B/32",
+    "fused_model_name": "Marqo/marqo-ecommerce-embeddings-L",
     "top_k": 10
 }
 ```
@@ -281,14 +286,14 @@ POST /api/retrieval/search/image-by-text
     ],
     "meta": {
         "total_results": 1,
-        "model_name": "ViT-B/32"
+        "model_name": "Marqo/marqo-ecommerce-embeddings-L"
     }
 }
 ```
 
 ### Text Search by Image (Cross-Modal)
 
-Find product text descriptions using an image query. Encodes the image with CLIP's image encoder and searches the Textual index. Only CLIP models are supported, and the textual index must have been built with the same CLIP model.
+Find products using an image query against the Fused index. Encodes the image with the multimodal model's image encoder and searches the Fused index. Only multimodal models (CLIP, Marqo) are supported. Requires products to be indexed with `fused_model_name` during add-product.
 
 ```http
 POST /api/retrieval/search/text-by-image
@@ -298,7 +303,7 @@ POST /api/retrieval/search/text-by-image
 ```json
 {
     "image": "C:/absolute/path/to/query_image.jpg",
-    "textual_model_name": "ViT-B/32",
+    "fused_model_name": "Marqo/marqo-ecommerce-embeddings-L",
     "top_k": 10
 }
 ```
@@ -310,12 +315,13 @@ POST /api/retrieval/search/text-by-image
     "results": [
         {
             "product_id": "product_001",
-            "score": 0.812345
+            "score": 0.812345,
+            "best_image_no": 0
         }
     ],
     "meta": {
         "total_results": 1,
-        "model_name": "ViT-B/32"
+        "model_name": "Marqo/marqo-ecommerce-embeddings-L"
     }
 }
 ```
@@ -491,10 +497,12 @@ GET /api/retrieval/models
         "textual_models": [
             { "name": "ViT-B/32", "dimension": 512 },
             { "name": "BAAI/bge-large-en-v1.5", "dimension": 1024 },
-            { "name": "Qwen/Qwen3-Embedding-8B", "dimension": 4096 }
+            { "name": "Qwen/Qwen3-Embedding-8B", "dimension": 4096 },
+            { "name": "Marqo/marqo-ecommerce-embeddings-L", "dimension": 1024 }
         ],
         "visual_models": [
-            { "name": "ViT-B/32", "dimension": 512 }
+            { "name": "ViT-B/32", "dimension": 512 },
+            { "name": "Marqo/marqo-ecommerce-embeddings-L", "dimension": 1024 }
         ],
         "defaults": {
             "textual": "BAAI/bge-large-en-v1.5",
@@ -508,12 +516,13 @@ GET /api/retrieval/models
 
 The system supports the following models (configured in `config.json`):
 
-| Model | Type | Dimension | Description |
-|-------|------|-----------|-------------|
-| `ViT-B/32` | CLIP | 512 | Default, balanced speed/accuracy (text + image) |
-| `ViT-B/16` | CLIP | 512 | Higher accuracy (text + image) |
-| `BAAI/bge-large-en-v1.5` | BGE | 1024 | High-quality text embeddings |
-| `Qwen/Qwen3-Embedding-8B` | Qwen | 4096 | Large-scale text embeddings |
+| Model | Type | Dimension | Modality | Description |
+|-------|------|-----------|----------|-------------|
+| `ViT-B/32` | CLIP | 512 | Text + Image | Default, balanced speed/accuracy |
+| `ViT-B/16` | CLIP | 512 | Text + Image | Higher accuracy |
+| `BAAI/bge-large-en-v1.5` | BGE | 1024 | Text only | High-quality text embeddings |
+| `Qwen/Qwen3-Embedding-8B` | Qwen | 4096 | Text only | Large-scale text embeddings |
+| `Marqo/marqo-ecommerce-embeddings-L` | Marqo | 1024 | Text + Image | E-commerce optimized multimodal (652M params, SigLIP) |
 
 ## 📚 Usage Examples
 

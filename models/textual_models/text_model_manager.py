@@ -14,9 +14,7 @@ class TextModelType(Enum):
     CLIP = "clip"
     BGE = "bge"
     QWEN = "qwen"
-    # Future models can be added here
-    # SENTENCE_TRANSFORMER = "sentence_transformer"
-    # OPENAI = "openai"
+    MARQO = "marqo"
 
 
 class TextModelManager:
@@ -68,6 +66,8 @@ class TextModelManager:
             self._initialize_bge_model()
         elif self.model_type == TextModelType.QWEN:
             self._initialize_qwen_model()
+        elif self.model_type == TextModelType.MARQO:
+            self._initialize_marqo_model()
         else:
             raise NotImplementedError(
                 f"Model type {self.model_type} is not implemented yet."
@@ -102,6 +102,18 @@ class TextModelManager:
 
         self.model = Qwen8BEmbedder(model_name=model_name, device=device)
         print(f"[TextModelManager] Initialized Qwen model: {model_name}")
+
+    def _initialize_marqo_model(self):
+        """Initialize Marqo text embedder."""
+        from .marqo_text_embedder import MarqoTextEmbedder
+
+        model_name = self.model_config.get(
+            "model_name", "Marqo/marqo-ecommerce-embeddings-L"
+        )
+        device = self.model_config.get("device", None)
+
+        self.model = MarqoTextEmbedder(model_name=model_name, device=device)
+        print(f"[TextModelManager] Initialized Marqo model: {model_name}")
 
     def get_embedding(self, text: str) -> List[float]:
         """

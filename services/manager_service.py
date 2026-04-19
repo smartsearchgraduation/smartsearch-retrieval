@@ -159,6 +159,8 @@ def get_textual_manager(model_name: str) -> TextModelManager:
             model_type = "bge"
         elif "qwen" in model_name.lower() or model_name.startswith("Qwen/"):
             model_type = "qwen"
+        elif "marqo" in model_name.lower() or model_name.startswith("Marqo/"):
+            model_type = "marqo"
         else:
             model_type = "clip"
 
@@ -169,11 +171,21 @@ def get_textual_manager(model_name: str) -> TextModelManager:
     return _textual_managers[model_name]
 
 
+def _get_visual_model_type(model_name: str) -> str:
+    """Determine visual model type from registry or name."""
+    if model_name in MODEL_REGISTRY:
+        return MODEL_REGISTRY[model_name]["type"]
+    if "marqo" in model_name.lower() or model_name.startswith("Marqo/"):
+        return "marqo"
+    return "clip"
+
+
 def get_visual_manager(model_name: str) -> VisualModelManager:
     """Get or initialize a visual model manager."""
     if model_name not in _visual_managers:
+        model_type = _get_visual_model_type(model_name)
         _visual_managers[model_name] = VisualModelManager(
-            model_type="clip",
+            model_type=model_type,
             model_config={"model_name": model_name},
         )
     return _visual_managers[model_name]
@@ -182,8 +194,9 @@ def get_visual_manager(model_name: str) -> VisualModelManager:
 def get_fused_manager(model_name: str) -> FusedModelManager:
     """Get or initialize a fused model manager."""
     if model_name not in _fused_managers:
+        model_type = _get_visual_model_type(model_name)
         _fused_managers[model_name] = FusedModelManager(
-            model_type="clip",
+            model_type=model_type,
             model_config={"model_name": model_name},
         )
     return _fused_managers[model_name]
@@ -229,8 +242,8 @@ def get_available_models() -> dict:
         entry = {"name": name, "dimension": info["dimension"]}
         # All models support text embeddings
         textual_models.append(entry)
-        # Only CLIP models support image embeddings
-        if info["type"] == "clip":
+        # Only multimodal models (CLIP, Marqo) support image embeddings
+        if info["type"] in ("clip", "marqo"):
             visual_models.append(entry)
 
     return {

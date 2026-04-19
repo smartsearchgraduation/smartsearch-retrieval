@@ -11,6 +11,10 @@
         "Qwen/Qwen3-Embedding-8B": {
             "type": "qwen",
             "dimension": 4096
+        },
+        "Marqo/marqo-ecommerce-embeddings-L": {
+            "type": "marqo",
+            "dimension": 1024
         }
     },
     "default_models": {

@@ -133,19 +133,22 @@ def deduplicate_fused_results(
     return product_scores
 
 
-def validate_clip_model(model_name: str):
-    """Raise ValueError if the model is not a CLIP model.
+MULTIMODAL_TYPES = {"clip", "marqo"}
 
-    Cross-modal search requires CLIP because text and image
-    must share the same embedding space.
+
+def validate_clip_model(model_name: str):
+    """Raise ValueError if the model does not have a shared text/image space.
+
+    Cross-modal search requires a multimodal model (CLIP or Marqo) because
+    text and image must share the same embedding space.
     """
     from services.manager_service import MODEL_REGISTRY
 
     model_info = MODEL_REGISTRY.get(model_name)
-    if not model_info or model_info["type"] != "clip":
+    if not model_info or model_info["type"] not in MULTIMODAL_TYPES:
         model_type = model_info["type"] if model_info else "unknown"
         raise ValueError(
-            f"Cross-modal search requires a CLIP model. "
+            f"Cross-modal search requires a multimodal model (CLIP or Marqo). "
             f"'{model_name}' is type '{model_type}'."
         )
 
