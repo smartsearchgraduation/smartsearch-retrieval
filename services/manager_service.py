@@ -177,6 +177,8 @@ def _get_visual_model_type(model_name: str) -> str:
         return MODEL_REGISTRY[model_name]["type"]
     if "marqo" in model_name.lower() or model_name.startswith("Marqo/"):
         return "marqo"
+    if "dinov3" in model_name.lower() or model_name.startswith("facebook/dinov3"):
+        return "dinov3"
     return "clip"
 
 
@@ -233,6 +235,10 @@ def get_all_index_stats() -> Dict[str, Dict[str, int]]:
     return stats
 
 
+TEXTUAL_TYPES = {"clip", "bge", "qwen", "marqo"}
+VISUAL_TYPES = {"clip", "marqo", "dinov3"}
+
+
 def get_available_models() -> dict:
     """Return available models categorized by type, with defaults."""
     textual_models = []
@@ -240,10 +246,10 @@ def get_available_models() -> dict:
 
     for name, info in MODEL_REGISTRY.items():
         entry = {"name": name, "dimension": info["dimension"]}
-        # All models support text embeddings
-        textual_models.append(entry)
-        # Only multimodal models (CLIP, Marqo) support image embeddings
-        if info["type"] in ("clip", "marqo"):
+        model_type = info["type"]
+        if model_type in TEXTUAL_TYPES:
+            textual_models.append(entry)
+        if model_type in VISUAL_TYPES:
             visual_models.append(entry)
 
     return {

@@ -15,6 +15,7 @@ class VisualModelType(Enum):
 
     CLIP = "clip"
     MARQO = "marqo"
+    DINOV3 = "dinov3"
 
 
 class VisualModelManager:
@@ -66,6 +67,8 @@ class VisualModelManager:
             self._initialize_clip_model()
         elif self.model_type == VisualModelType.MARQO:
             self._initialize_marqo_model()
+        elif self.model_type == VisualModelType.DINOV3:
+            self._initialize_dinov3_model()
         else:
             raise NotImplementedError(
                 f"Model type {self.model_type} is not implemented yet."
@@ -92,6 +95,18 @@ class VisualModelManager:
 
         self.model = MarqoImageEmbedder(model_name=model_name, device=device)
         print(f"[VisualModelManager] Initialized Marqo model: {model_name}")
+
+    def _initialize_dinov3_model(self):
+        """Initialize DINOv3 image embedder."""
+        from .dinov3_image_embedder import DINOv3ImageEmbedder
+
+        model_name = self.model_config.get(
+            "model_name", "facebook/dinov3-vit7b16-pretrain-lvd1689m"
+        )
+        device = self.model_config.get("device", None)
+
+        self.model = DINOv3ImageEmbedder(model_name=model_name, device=device)
+        print(f"[VisualModelManager] Initialized DINOv3 model: {model_name}")
 
     def _validate_image_path(self, image_path: str) -> None:
         """

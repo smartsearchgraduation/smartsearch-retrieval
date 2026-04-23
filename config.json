@@ -15,6 +15,10 @@
         "Marqo/marqo-ecommerce-embeddings-L": {
             "type": "marqo",
             "dimension": 1024
+        },
+        "facebook/dinov3-vit7b16-pretrain-lvd1689m": {
+            "type": "dinov3",
+            "dimension": 4096
         }
     },
     "default_models": {
