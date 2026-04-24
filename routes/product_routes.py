@@ -76,13 +76,30 @@ def add_product():
         textual_faiss = get_faiss_manager(textual_model_name)
         visual_faiss = get_faiss_manager(visual_model_name)
 
-        # Check if product already has embeddings for the active model
-        if textual_faiss.has_product(IndexType.TEXTUAL, product_id):
+        # Per-index existence checks so each model is treated independently.
+        # A product may already be indexed for textual_model but not for visual_model
+        # (or vice versa) when multiple models coexist.
+        textual_already_indexed = textual_faiss.has_product(IndexType.TEXTUAL, product_id)
+        visual_already_indexed = visual_faiss.has_product(IndexType.VISUAL, product_id)
+
+        fused_faiss = None
+        fused_already_indexed = False
+        fused_enabled = bool(fused_model_name and images)
+        if fused_enabled:
+            fused_faiss = get_faiss_manager(fused_model_name)
+            fused_already_indexed = fused_faiss.has_product(IndexType.FUSED, product_id)
+
+        # Nothing to do if every requested index already has this product
+        if (
+            textual_already_indexed
+            and visual_already_indexed
+            and (not fused_enabled or fused_already_indexed)
+        ):
             return (
                 jsonify(
                     {
                         "status": "success",
-                        "message": f"Product {product_id} already has embeddings for this model, skipping",
+                        "message": f"Product {product_id} already has embeddings for all requested models, skipping",
                         "details": {
                             "product_id": product_id,
                             "skipped": True,
@@ -92,61 +109,63 @@ def add_product():
                 200,
             )
 
-        textual_manager = get_textual_manager(textual_model_name)
-        visual_manager = get_visual_manager(visual_model_name)
+        # combined_text is shared between textual and fused; compute once when needed
+        combined_text = None
+        if (not textual_already_indexed) or (fused_enabled and not fused_already_indexed):
+            combined_text = combine_product_text(name, description, brand, category, price)
+            validate_text_length(combined_text)
 
-        # Combine text fields and create textual embedding
-        combined_text = combine_product_text(name, description, brand, category, price)
-        validate_text_length(combined_text)
-        textual_embedding = textual_manager.get_document_embedding(combined_text)
+        # Textual step
+        textual_vector_id = None
+        if not textual_already_indexed:
+            textual_manager = get_textual_manager(textual_model_name)
+            textual_embedding = textual_manager.get_document_embedding(combined_text)
+            textual_vector_id = textual_faiss.add_to_textual(
+                embedding=textual_embedding,
+                product_id=product_id,
+                model_name=textual_model_name,
+            )
 
-        # Add to textual index
-        textual_vector_id = textual_faiss.add_to_textual(
-            embedding=textual_embedding,
-            product_id=product_id,
-            model_name=textual_model_name,
-        )
-
-        # Process images and add to visual index
+        # Visual step
         visual_vector_ids = []
-        for image_no, image_path in enumerate(images):
-            try:
-                validate_image_file_size(image_path)
-                visual_embedding = visual_manager.get_embedding(image_path)
-                visual_vector_id = visual_faiss.add_to_visual(
-                    embedding=visual_embedding,
-                    product_id=product_id,
-                    image_no=image_no,
-                    model_name=visual_model_name,
-                )
-                visual_vector_ids.append(visual_vector_id)
-            except FileNotFoundError as e:
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": f"Image not found: {image_path}",
-                        }
-                    ),
-                    400,
-                )
-            except ValueError as e:
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": str(e),
-                        }
-                    ),
-                    400,
-                )
+        if not visual_already_indexed:
+            visual_manager = get_visual_manager(visual_model_name)
+            for image_no, image_path in enumerate(images):
+                try:
+                    validate_image_file_size(image_path)
+                    visual_embedding = visual_manager.get_embedding(image_path)
+                    visual_vector_id = visual_faiss.add_to_visual(
+                        embedding=visual_embedding,
+                        product_id=product_id,
+                        image_no=image_no,
+                        model_name=visual_model_name,
+                    )
+                    visual_vector_ids.append(visual_vector_id)
+                except FileNotFoundError:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": f"Image not found: {image_path}",
+                            }
+                        ),
+                        400,
+                    )
+                except ValueError as e:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": str(e),
+                            }
+                        ),
+                        400,
+                    )
 
-        # Process fused embeddings (early fusion indexing) if fused_model_name provided
+        # Fused step (only when fused_model_name is provided and images are present)
         fused_vector_ids = []
-        if fused_model_name and images:
-            fused_faiss = get_faiss_manager(fused_model_name)
+        if fused_enabled and not fused_already_indexed:
             fused_mgr = get_fused_manager(fused_model_name)
-
             for image_no, image_path in enumerate(images):
                 try:
                     fused_embedding = fused_mgr.get_embedding(combined_text, image_path)
@@ -177,20 +196,36 @@ def add_product():
                         ),
                         400,
                     )
-            fused_faiss.save()
 
-        textual_faiss.save()
-        if visual_faiss is not textual_faiss:
-            visual_faiss.save()
+        # Persist only the FAISS folders that were actually modified. Different
+        # models may share a folder (e.g. same model used for text+visual), so
+        # dedupe by object identity to avoid double-saves.
+        saved_ids = set()
+
+        def _save_once(mgr):
+            if id(mgr) in saved_ids:
+                return
+            mgr.save()
+            saved_ids.add(id(mgr))
+
+        if not textual_already_indexed:
+            _save_once(textual_faiss)
+        if not visual_already_indexed:
+            _save_once(visual_faiss)
+        if fused_enabled and not fused_already_indexed:
+            _save_once(fused_faiss)
 
         details = {
             "product_id": product_id,
             "textual_vector_id": textual_vector_id,
+            "textual_skipped": textual_already_indexed,
             "visual_vector_ids": visual_vector_ids,
+            "visual_skipped": visual_already_indexed,
             "images_processed": len(visual_vector_ids),
         }
-        if fused_vector_ids:
+        if fused_enabled:
             details["fused_vector_ids"] = fused_vector_ids
+            details["fused_skipped"] = fused_already_indexed
 
         return (
             jsonify(

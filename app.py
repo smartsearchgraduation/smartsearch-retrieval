@@ -40,4 +40,4 @@ app = create_app()
 if __name__ == "__main__":
     from services.manager_service import HOST, PORT
 
-    app.run(debug=True, host=HOST, port=PORT)
+    app.run(debug=True, host=HOST, port=PORT, use_reloader=False)
