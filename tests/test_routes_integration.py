@@ -362,3 +362,42 @@ def test_ri_l2_12_cross_modal_rejects_non_multimodal(flask_client, stub_managers
     )
     assert resp.status_code == 400
     assert "multimodal" in resp.get_json()["message"]
+
+
+@pytest.mark.integration
+def test_ri_l2_13_late_fusion_combined_score_end_to_end(
+    flask_client, stub_managers, tmp_image_path
+):
+    """RI-L2-13: end-to-end /search/late combined_score formula via real Flask cycle."""
+    for pid in ("rl1", "rl2"):
+        r = _add(
+            flask_client,
+            {
+                "id": pid,
+                "name": f"product {pid}",
+                "textual_model_name": "ViT-B/32",
+                "visual_model_name": "ViT-B/32",
+                "images": [tmp_image_path],
+            },
+        )
+        assert r.status_code == 201
+
+    resp = _post(
+        flask_client,
+        "/api/retrieval/search/late",
+        {
+            "text": "query",
+            "textual_model_name": "ViT-B/32",
+            "text_weight": 0.4,
+            "image": tmp_image_path,
+            "visual_model_name": "ViT-B/32",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["results"], "expected at least one fused result"
+    top = body["results"][0]
+    expected = round(0.4 * top["text_score"] + 0.6 * top["image_score"], 6)
+    assert abs(top["combined_score"] - expected) <= 1e-6
+    assert body["meta"]["text_weight"] == 0.4
+    assert body["meta"]["image_weight"] == pytest.approx(0.6, abs=1e-9)

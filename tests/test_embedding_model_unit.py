@@ -1917,3 +1917,256 @@ def test_ru_em_83_qwen_embedder_full(monkeypatch):
     assert all(len(v) == DIM_QWEN for v in out)
     assert all(abs(np.linalg.norm(v) - 1.0) < 1e-4 for v in out)
     assert embedder.get_embedding_dimension() == DIM_QWEN
+
+
+# --------------------------------------------------------------------------- #
+# Gap-closure round: RU-EM-84..90                                             #
+# --------------------------------------------------------------------------- #
+
+
+def _make_recording_transformers_module(recorder, last_hidden_dim, raw_norm=1.0):
+    """Build a fake `transformers` module that records every string passed
+    to the tokenizer's __call__ into ``recorder``.
+
+    ``raw_norm`` controls the L2 norm of the synthesized last_hidden_state row
+    BEFORE the embedder normalizes — used by RU-EM-89/90 to verify
+    self-normalization.
+    """
+    mod = types.ModuleType("transformers")
+
+    class _RecTokenizer:
+        @classmethod
+        def from_pretrained(cls, name, **kwargs):
+            return cls()
+
+        def __call__(
+            self,
+            text,
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors="pt",
+        ):
+            recorder.append(text)
+            seq_len = 4
+            return _FakeTokenizerOutput(
+                {
+                    "input_ids": torch.zeros(1, seq_len, dtype=torch.long),
+                    "attention_mask": torch.ones(1, seq_len, dtype=torch.long),
+                }
+            )
+
+    class _RecModel:
+        @classmethod
+        def from_pretrained(cls, name, **kwargs):
+            return cls()
+
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+        def __call__(self, **inputs):
+            seq_len = inputs["input_ids"].shape[1] if "input_ids" in inputs else 4
+            # Build a row whose raw L2 norm is `raw_norm` (e.g., [3,4,0,...] → norm 5).
+            row = np.zeros(last_hidden_dim, dtype=np.float32)
+            if last_hidden_dim >= 2 and raw_norm != 1.0:
+                # Pick (a, b) so a^2 + b^2 = raw_norm^2; use (3,4) for norm=5.
+                if abs(raw_norm - 5.0) < 1e-9:
+                    row[0], row[1] = 3.0, 4.0
+                else:
+                    row[0] = raw_norm
+            else:
+                row[:] = np.array(
+                    deterministic_vector("rec-fake", last_hidden_dim),
+                    dtype=np.float32,
+                )
+            lhs = torch.tensor(np.tile(row, (1, seq_len, 1)), dtype=torch.float32)
+            return type("Out", (), {"last_hidden_state": lhs, "pooler_output": None})()
+
+    mod.AutoTokenizer = _RecTokenizer
+    mod.AutoModel = _RecModel
+    return mod
+
+
+def test_ru_em_84_bge_query_prefix_in_embed_query(monkeypatch):
+    """RU-EM-84: BGE embed_query prepends the query instruction prefix."""
+    import importlib
+    from models.textual_models import bge_base_embedder as bge_mod
+
+    recorder = []
+    fake = _make_recording_transformers_module(recorder, last_hidden_dim=DIM_BGE)
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    importlib.reload(bge_mod)
+
+    embedder = bge_mod.BGEBaseEmbedder(device="cpu")
+    recorder.clear()
+    out = embedder.embed_query("red shoes")
+
+    assert len(out) == DIM_BGE
+    assert recorder, "tokenizer was not called"
+    seen = recorder[-1]
+    expected_prefix = "Represent this sentence for searching relevant passages: "
+    assert seen == expected_prefix + "red shoes"
+
+
+def test_ru_em_85_bge_no_prefix_in_embed_documents(monkeypatch):
+    """RU-EM-85: BGE embed_documents does NOT prepend any instruction prefix."""
+    import importlib
+    from models.textual_models import bge_base_embedder as bge_mod
+
+    recorder = []
+    fake = _make_recording_transformers_module(recorder, last_hidden_dim=DIM_BGE)
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    importlib.reload(bge_mod)
+
+    embedder = bge_mod.BGEBaseEmbedder(device="cpu")
+    recorder.clear()
+    embedder.embed_documents(["red shoes", "blue hat"])
+
+    assert recorder == ["red shoes", "blue hat"]
+    # And no prefix substring leaked in.
+    for s in recorder:
+        assert "Represent this sentence" not in s
+
+
+def test_ru_em_86_qwen_query_prefix_in_embed_query(monkeypatch):
+    """RU-EM-86: Qwen embed_query prepends the Instruct/Query template."""
+    import importlib
+    from models.textual_models import qwen_8b_model as qwen_mod
+
+    recorder = []
+    fake = _make_recording_transformers_module(recorder, last_hidden_dim=DIM_QWEN)
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    importlib.reload(qwen_mod)
+
+    embedder = qwen_mod.Qwen8BEmbedder(device="cpu")
+    recorder.clear()
+    out = embedder.embed_query("find me sneakers")
+
+    assert len(out) == DIM_QWEN
+    assert recorder, "tokenizer was not called"
+    seen = recorder[-1]
+    expected_prefix = (
+        "Instruct: Given a query, retrieve relevant documents that answer the query.\n"
+        "Query: "
+    )
+    assert seen == expected_prefix + "find me sneakers"
+
+
+def test_ru_em_87_qwen_no_prefix_in_embed_documents(monkeypatch):
+    """RU-EM-87: Qwen embed_documents does NOT prepend the query template."""
+    import importlib
+    from models.textual_models import qwen_8b_model as qwen_mod
+
+    recorder = []
+    fake = _make_recording_transformers_module(recorder, last_hidden_dim=DIM_QWEN)
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    importlib.reload(qwen_mod)
+
+    embedder = qwen_mod.Qwen8BEmbedder(device="cpu")
+    recorder.clear()
+    embedder.embed_documents(["alpha doc", "beta doc"])
+
+    assert recorder == ["alpha doc", "beta doc"]
+    for s in recorder:
+        assert "Instruct:" not in s
+        assert "Query:" not in s
+
+
+def test_ru_em_88_clip_fused_average_produces_normalized_sum(monkeypatch, tmp_path):
+    """RU-EM-88: CLIPFusedEmbedder 'average' fusion equals normalize((t+i)/2)."""
+    from models.fused_models import clip_fused_embedder as cfe_mod
+    from PIL import Image as PILImage
+
+    # Stub CLIPModelPool.get so no real CLIP weights load.
+    class _StubModel:
+        def encode_text(self, toks):
+            v = torch.zeros(1, DIM_CLIP, dtype=torch.float32)
+            v[0, 0] = 1.0
+            return v
+
+        def encode_image(self, img_tensor):
+            v = torch.zeros(1, DIM_CLIP, dtype=torch.float32)
+            v[0, 1] = 1.0
+            return v
+
+    def _stub_preprocess(img):
+        return torch.zeros(3, 224, 224, dtype=torch.float32)
+
+    from models.clip_model_pool import CLIPModelPool
+
+    monkeypatch.setattr(
+        CLIPModelPool, "get", classmethod(lambda cls, n, d: (_StubModel(), _stub_preprocess))
+    )
+
+    # Stub clip.tokenize so the inner `import clip` resolves to a fake module.
+    fake_clip_mod = types.ModuleType("clip")
+    fake_clip_mod.tokenize = lambda texts, truncate=True: torch.zeros(
+        1, 77, dtype=torch.long
+    )
+    monkeypatch.setitem(sys.modules, "clip", fake_clip_mod)
+
+    # Stub PIL.Image.open so the path-existence branch passes without a real JPEG.
+    monkeypatch.setattr(
+        PILImage, "open", lambda p: PILImage.new("RGB", (4, 4), color="white")
+    )
+
+    # Real on-disk image path (content irrelevant — Image.open is stubbed).
+    img_path = tmp_path / "fake.jpg"
+    img_path.write_bytes(b"\xff\xd8\xff\xe0placeholder")
+
+    embedder = cfe_mod.CLIPFusedEmbedder(
+        model_name="ViT-B/32", device="cpu", fusion_method="average"
+    )
+    assert embedder.fusion_method == "average"
+
+    fused = embedder.embed_text_and_image("a query", str(img_path))
+    fused = np.array(fused, dtype=np.float32)
+
+    assert fused.shape == (DIM_CLIP,)
+    # Expected: normalize(([1,0,...] + [0,1,...]) / 2) = [1/sqrt2, 1/sqrt2, 0, ...]
+    np.testing.assert_allclose(
+        fused[:2], [1.0 / np.sqrt(2), 1.0 / np.sqrt(2)], atol=1e-5
+    )
+    assert float(np.abs(fused[2:]).max()) < 1e-6
+    assert abs(np.linalg.norm(fused) - 1.0) < 1e-5
+
+
+def test_ru_em_89_bge_self_normalizes_non_unit_model_output(monkeypatch):
+    """RU-EM-89: BGE embedder L2-normalizes output even if model returns norm != 1."""
+    import importlib
+    from models.textual_models import bge_base_embedder as bge_mod
+
+    recorder = []
+    fake = _make_recording_transformers_module(
+        recorder, last_hidden_dim=DIM_BGE, raw_norm=5.0
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    importlib.reload(bge_mod)
+
+    embedder = bge_mod.BGEBaseEmbedder(device="cpu")
+    out = np.array(embedder.embed_documents(["pre-norm-5 vector"])[0], dtype=np.float64)
+
+    assert len(out) == DIM_BGE
+    assert np.linalg.norm(out) == pytest.approx(1.0, abs=1e-5)
+
+
+def test_ru_em_90_qwen_self_normalizes_non_unit_model_output(monkeypatch):
+    """RU-EM-90: Qwen embedder L2-normalizes output even if model returns norm != 1."""
+    import importlib
+    from models.textual_models import qwen_8b_model as qwen_mod
+
+    recorder = []
+    fake = _make_recording_transformers_module(
+        recorder, last_hidden_dim=DIM_QWEN, raw_norm=5.0
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    importlib.reload(qwen_mod)
+
+    embedder = qwen_mod.Qwen8BEmbedder(device="cpu")
+    out = np.array(embedder.embed_documents(["pre-norm-5 vector"])[0], dtype=np.float64)
+
+    assert len(out) == DIM_QWEN
+    assert np.linalg.norm(out) == pytest.approx(1.0, abs=1e-5)

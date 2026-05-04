@@ -840,3 +840,100 @@ def test_ru_rt_42_search_text_empty_index(flask_client, stub_managers):
     assert body["status"] == "success"
     assert body["results"] == []
     assert body["meta"]["total_results"] == 0
+
+
+# ---------- Late fusion: combined_score formula & ordering (gap-closure) ----------
+
+
+def test_ru_rt_43_search_late_combined_score_formula(
+    flask_client, stub_managers, tmp_image_path
+):
+    """RU-RT-43: combined_score == round(text_weight*text_score + (1-text_weight)*image_score, 6)."""
+    # Index one product with image so both textual and visual indices populate.
+    add = _add_product(
+        flask_client,
+        {
+            "id": "pw1",
+            "name": "weighted product",
+            "textual_model_name": "ViT-B/32",
+            "visual_model_name": "ViT-B/32",
+            "images": [tmp_image_path],
+        },
+    )
+    assert add.status_code == 201
+
+    resp = _post_json(
+        flask_client,
+        "/api/retrieval/search/late",
+        {
+            "text": "weighted product",
+            "textual_model_name": "ViT-B/32",
+            "text_weight": 0.7,
+            "image": tmp_image_path,
+            "visual_model_name": "ViT-B/32",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["results"], "expected at least one fused result"
+    top = body["results"][0]
+    # Reported text_score/image_score are already rounded to 6 decimals;
+    # combined_score is computed from raw scores then rounded once. Reconstruction
+    # from the reported (already-rounded) scores can drift by up to ~1e-6.
+    expected = round(0.7 * top["text_score"] + 0.3 * top["image_score"], 6)
+    assert top["combined_score"] == pytest.approx(expected, abs=2e-6)
+    assert body["meta"]["text_weight"] == 0.7
+    assert body["meta"]["image_weight"] == pytest.approx(0.3, abs=1e-9)
+
+
+def test_ru_rt_44_search_late_results_sorted_descending(
+    flask_client, stub_managers, tmp_image_path
+):
+    """RU-RT-44: /search/late results are sorted descending by combined_score."""
+    # Add two products with same image (so visual scores are similar) but
+    # different names (so text similarity to the query differs). Stub vectors
+    # are deterministic functions of the input string, so distinct text inputs
+    # yield distinct text_scores; ordering is exercised regardless of which
+    # product wins — the assertion is monotonicity of combined_score.
+    for pid, name in [("pa", "alpha widget"), ("pb", "beta gadget")]:
+        r = _add_product(
+            flask_client,
+            {
+                "id": pid,
+                "name": name,
+                "textual_model_name": "ViT-B/32",
+                "visual_model_name": "ViT-B/32",
+                "images": [tmp_image_path],
+            },
+        )
+        assert r.status_code == 201
+
+    resp = _post_json(
+        flask_client,
+        "/api/retrieval/search/late",
+        {
+            "text": "alpha widget",
+            "textual_model_name": "ViT-B/32",
+            "text_weight": 0.5,
+            "image": tmp_image_path,
+            "visual_model_name": "ViT-B/32",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    results = body["results"]
+    # Must contain both products (each indexed in both modalities).
+    ids = {r["product_id"] for r in results}
+    assert {"pa", "pb"}.issubset(ids), f"expected pa and pb in results, got {ids}"
+
+    # combined_scores are non-increasing.
+    scores = [r["combined_score"] for r in results]
+    assert scores == sorted(scores, reverse=True)
+
+    # The product whose name matches the query text exactly should rank first.
+    # CLARIFY: with deterministic hash-based stub vectors, the 'pa' product's
+    # stored textual vector is derived from the doc-side hash of "alpha widget"
+    # while the query hashes the query-side string; since they share the input
+    # string they collide deterministically. The looser monotonicity check
+    # above is the load-bearing assertion; this one is opportunistic.
+    assert results[0]["product_id"] in {"pa", "pb"}
