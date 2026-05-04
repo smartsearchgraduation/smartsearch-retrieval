@@ -12,6 +12,7 @@ for the textual model, another for the visual model).
 
 import json
 import os
+import threading
 from typing import Dict, Any, Optional, List
 
 from models.textual_models import TextModelManager
@@ -26,6 +27,7 @@ _textual_managers: Dict[str, TextModelManager] = {}
 _visual_managers: Dict[str, VisualModelManager] = {}
 _fused_managers: Dict[str, FusedModelManager] = {}
 _faiss_managers: Dict[str, FAISSManager] = {}
+_faiss_managers_lock = threading.Lock()
 
 # Configuration (loaded at module import)
 _config = None
@@ -91,13 +93,14 @@ def get_faiss_manager(model_name: str = None) -> FAISSManager:
     dimension = _get_model_dimension(model_name)
     folder_name = make_folder_name(model_name, dimension)
 
-    if folder_name not in _faiss_managers:
-        index_path = os.path.join(DATA_BASE_PATH, folder_name)
-        _faiss_managers[folder_name] = FAISSManager(
-            dimension=dimension,
-            index_path=index_path,
-        )
-    return _faiss_managers[folder_name]
+    with _faiss_managers_lock:
+        if folder_name not in _faiss_managers:
+            index_path = os.path.join(DATA_BASE_PATH, folder_name)
+            _faiss_managers[folder_name] = FAISSManager(
+                dimension=dimension,
+                index_path=index_path,
+            )
+        return _faiss_managers[folder_name]
 
 
 def get_all_faiss_managers() -> Dict[str, FAISSManager]:
@@ -118,20 +121,21 @@ def discover_model_folders() -> List[str]:
 
 def get_or_load_all_faiss_managers() -> Dict[str, FAISSManager]:
     """Ensure all on-disk model folders have a loaded FAISSManager."""
-    for folder_name in discover_model_folders():
-        if folder_name not in _faiss_managers:
-            index_path = os.path.join(DATA_BASE_PATH, folder_name)
-            # Parse dimension from folder name: <name>_<dim>_embeddings
-            parts = folder_name.rsplit("_", 2)
-            try:
-                dim = int(parts[-2])
-            except (IndexError, ValueError):
-                dim = DEFAULT_DIMENSION
-            _faiss_managers[folder_name] = FAISSManager(
-                dimension=dim,
-                index_path=index_path,
-            )
-    return _faiss_managers
+    with _faiss_managers_lock:
+        for folder_name in discover_model_folders():
+            if folder_name not in _faiss_managers:
+                index_path = os.path.join(DATA_BASE_PATH, folder_name)
+                # Parse dimension from folder name: <name>_<dim>_embeddings
+                parts = folder_name.rsplit("_", 2)
+                try:
+                    dim = int(parts[-2])
+                except (IndexError, ValueError):
+                    dim = DEFAULT_DIMENSION
+                _faiss_managers[folder_name] = FAISSManager(
+                    dimension=dim,
+                    index_path=index_path,
+                )
+        return _faiss_managers
 
 
 def remove_product_from_all_models(product_id: str) -> Dict[str, Dict[str, int]]:
