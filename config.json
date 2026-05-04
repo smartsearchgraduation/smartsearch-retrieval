@@ -8,6 +8,11 @@
             "type": "bge",
             "dimension": 1024
         },
+        "BAAI/bge-large-finetuned": {
+            "type": "bge",
+            "dimension": 1024,
+            "local_path": "./models/textual_models/bge-large-finetuned"
+        },
         "Qwen/Qwen3-Embedding-8B": {
             "type": "qwen",
             "dimension": 4096

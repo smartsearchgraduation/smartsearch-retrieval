@@ -89,8 +89,9 @@ class TextModelManager:
 
         model_name = self.model_config.get("model_name", "BAAI/bge-large-en-v1.5")
         device = self.model_config.get("device", None)
+        local_path = self.model_config.get("local_path")
 
-        self.model = BGEBaseEmbedder(model_name=model_name, device=device)
+        self.model = BGEBaseEmbedder(model_name=model_name, device=device, local_path=local_path)
         print(f"[TextModelManager] Initialized BGE model: {model_name}")
 
     def _initialize_qwen_model(self):

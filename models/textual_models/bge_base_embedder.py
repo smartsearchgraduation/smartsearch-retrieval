@@ -18,7 +18,7 @@ class BGEBaseEmbedder(Embeddings):
     and produce 1024-dimensional embeddings.
     """
 
-    def __init__(self, model_name: str = "BAAI/ bge-large-en-v1.5", device: str = None):
+    def __init__(self, model_name: str = "BAAI/ bge-large-en-v1.5", device: str = None, local_path: str = None):
         """
         Initialize the BGE Base Embedder.
 
@@ -26,8 +26,11 @@ class BGEBaseEmbedder(Embeddings):
             model_name: HuggingFace model name. Default is "BAAI/ bge-large-en-v1.5".
             device: Device to run the model on ('cuda' or 'cpu').
                     Auto-detected if None.
+            local_path: Optional local directory path containing the model files.
+                       If provided, loads model from this path instead of HuggingFace Hub.
         """
         self.model_name = model_name
+        self.local_path = local_path
         self.device = (
             device if device else ("cuda" if torch.cuda.is_available() else "cpu")
         )
@@ -37,12 +40,13 @@ class BGEBaseEmbedder(Embeddings):
         self._load_model()
 
     def _load_model(self):
-        """Load the BGE model and tokenizer from HuggingFace."""
+        """Load the BGE model and tokenizer from HuggingFace or a local path."""
         try:
             from transformers import AutoTokenizer, AutoModel
 
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.model = AutoModel.from_pretrained(self.model_name)
+            load_path = self.local_path if self.local_path else self.model_name
+            self.tokenizer = AutoTokenizer.from_pretrained(load_path)
+            self.model = AutoModel.from_pretrained(load_path)
             self.model.to(self.device)
             self.model.eval()
             print(

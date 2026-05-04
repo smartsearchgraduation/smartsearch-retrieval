@@ -59,6 +59,17 @@ def load_config() -> dict:
 
     MODEL_REGISTRY = _config["models"]
     DEFAULT_MODELS = _config.get("default_models", {})
+
+    # Resolve relative local_path values to absolute paths based on the Retrieval root
+    retrieval_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for _model_name, _model_info in MODEL_REGISTRY.items():
+        if "local_path" in _model_info:
+            lp = _model_info["local_path"]
+            if not os.path.isabs(lp):
+                _model_info["local_path"] = os.path.normpath(
+                    os.path.join(retrieval_root, lp)
+                )
+
     defaults = _config.get("defaults", {})
     DEFAULT_DIMENSION = defaults.get("dimension", 512)
     DATA_BASE_PATH = defaults.get("data_base_path", "./data")
@@ -168,9 +179,15 @@ def get_textual_manager(model_name: str) -> TextModelManager:
         else:
             model_type = "clip"
 
+        registry_entry = MODEL_REGISTRY.get(model_name, {})
+        model_config = {"model_name": model_name}
+        local_path = registry_entry.get("local_path")
+        if local_path:
+            model_config["local_path"] = local_path
+
         _textual_managers[model_name] = TextModelManager(
             model_type=model_type,
-            model_config={"model_name": model_name},
+            model_config=model_config,
         )
     return _textual_managers[model_name]
 
