@@ -1,5 +1,6 @@
 retrieval-venv/
 data/
+models/textual_models/bge-large-finetuned/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
