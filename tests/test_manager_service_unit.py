@@ -102,6 +102,7 @@ def test_ru_ms_01_load_config_populates_model_registry():
     expected = {
         "ViT-B/32",
         "BAAI/bge-large-en-v1.5",
+        "BAAI/bge-large-finetuned",
         "Qwen/Qwen3-Embedding-8B",
         "Marqo/marqo-ecommerce-embeddings-L",
         "facebook/dinov3-vit7b16-pretrain-lvd1689m",
