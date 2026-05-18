@@ -1,0 +1,9 @@
+{
+  "idle_drift_mb": 0.0,
+  "rss_first_bytes": 1781661696,
+  "rss_first_mb": 1699.125,
+  "rss_second_bytes": 1781661696,
+  "rss_second_mb": 1699.125,
+  "spec_drift_target_mb": 50,
+  "spec_hard_target_mb": 2048
+}

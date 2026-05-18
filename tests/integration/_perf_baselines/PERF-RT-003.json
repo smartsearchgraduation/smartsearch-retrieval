@@ -1,0 +1,16 @@
+{
+  "error_count": 0,
+  "latency_p50_ms": 71.07409997843206,
+  "latency_p95_ms": 130.12950000120327,
+  "max_workers": 4,
+  "non_200_codes": [],
+  "note": "spec target 20 req/s; not asserted because concurrent load is out of scope per global Scope Limitation in performance_testing.md (mirrors PERF-BE-010 relaxation). Test verifies only that no worker raised and at least one request succeeded; observed_rps is RECORDED for tracking.",
+  "observed_rps": 52.659802753766904,
+  "request_count": 120,
+  "seed_count": 50,
+  "spec_target_failure_rate_pct": 1,
+  "spec_target_rps": 20,
+  "success_count": 120,
+  "wall_elapsed_s": 2.2787780000071507,
+  "worker_exceptions": []
+}
